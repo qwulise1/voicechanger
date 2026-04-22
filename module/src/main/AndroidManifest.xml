@@ -21,10 +21,10 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Scoped microphone voice effects with live config, routing, and diagnostics." />
+            android:value="Root voicechanger with live config, diagnostics, recommended LSPosed scope, and native capture hooks." />
         <meta-data
             android:name="xposedscope"
-            android:resource="@array/recommended_scopes" />
+            android:value="org.telegram.messenger;com.discord;com.whatsapp;org.thoughtcrime.securesms;org.signal.messenger;com.skype.raider" />
         <meta-data
             android:name="xposedminversion"
             android:value="93" />

@@ -1,6 +1,8 @@
 package com.qwulise.voicechanger.app
 
+import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -30,6 +32,7 @@ import java.util.Date
 class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var moduleInfoText: TextView
+    private lateinit var scopeText: TextView
     private lateinit var enabledSwitch: SwitchMaterial
     private lateinit var restrictSwitch: SwitchMaterial
     private lateinit var modeSpinner: Spinner
@@ -44,12 +47,16 @@ class MainActivity : AppCompatActivity() {
     private val uiHandler = Handler(Looper.getMainLooper())
     private var suppressUiCallbacks = false
     private var currentModuleInfo: ModuleInfo? = null
+    private var currentAvailability = ModuleAvailability(
+        releaseInstalled = false,
+        debugInstalled = false,
+        providerVisible = false,
+        providerCallable = false,
+    )
     private var lastLogs: List<DiagnosticEvent> = emptyList()
     private val logsRefreshRunnable = object : Runnable {
         override fun run() {
-            if (ModuleConfigClient.isModuleAvailable(this@MainActivity)) {
-                reloadLogs(showToast = false)
-            }
+            reloadLogs(showToast = false)
             uiHandler.postDelayed(this, LOG_REFRESH_INTERVAL_MS)
         }
     }
@@ -57,15 +64,18 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val root = ScrollView(this)
+        val root = ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor("#F4EFE6"))
+        }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            val padding = dp(20)
-            setPadding(padding, padding, padding, padding)
+            val padding = dp(18)
+            setPadding(padding, dp(20), padding, dp(28))
         }
 
         statusText = body("")
-        moduleInfoText = body("")
+        moduleInfoText = monoBody("")
+        scopeText = monoBody("")
         enabledSwitch = SwitchMaterial(this).apply {
             text = "Включить обработку"
             setOnCheckedChangeListener { _, _ ->
@@ -78,7 +88,7 @@ class MainActivity : AppCompatActivity() {
             text = "Только выбранные пакеты"
             setOnCheckedChangeListener { _, isChecked ->
                 packagesInput.isEnabled = isChecked
-                packagesInput.alpha = if (isChecked) 1f else 0.6f
+                packagesInput.alpha = if (isChecked) 1f else 0.55f
                 if (!suppressUiCallbacks) {
                     updateStatusPreview()
                 }
@@ -102,42 +112,79 @@ class MainActivity : AppCompatActivity() {
             minLines = 4
             gravity = Gravity.TOP or Gravity.START
             hint = "org.telegram.messenger\ncom.discord\ncom.whatsapp"
+            background = fieldBackground()
+            setPadding(dp(12), dp(12), dp(12), dp(12))
         }
-        logsText = body("Логи еще не загружены.").apply {
-            setTypeface(Typeface.MONOSPACE)
+        logsText = monoBody("Логи еще не загружены.")
+
+        column.addView(headerBlock())
+
+        panel(
+            title = "Подключение",
+            subtitle = "Companion показывает не только общий статус, а отдельные признаки: найден ли пакет модуля, виден ли provider и отвечает ли реальный handshake.",
+        ).also { panel ->
+            panel.addView(statusText)
+            panel.addView(divider())
+            panel.addView(moduleInfoText)
+            column.addView(panel)
         }
 
-        column.addView(title("Voicechanger Companion"))
-        column.addView(body("Companion APK для LSPosed-модуля. Здесь можно включать обработку, ограничивать ее по пакетам и смотреть живую диагностику того, в каком приложении сработали хуки. В LSPosed модуль еще должен быть включен в scope нужных приложений."))
-        column.addView(section("Статус"))
-        column.addView(statusText)
-        column.addView(section("Модуль"))
-        column.addView(moduleInfoText)
-        column.addView(section("Обработка"))
-        column.addView(enabledSwitch)
-        column.addView(section("Режим"))
-        column.addView(modeSpinner)
-        column.addView(section("Сила эффекта"))
-        column.addView(effectValue)
-        column.addView(effectSeek)
-        column.addView(section("Усиление микрофона"))
-        column.addView(gainValue)
-        column.addView(gainSeek)
-        column.addView(section("Маршрутизация"))
-        column.addView(restrictSwitch)
-        column.addView(body("Если переключатель выключен, модуль обрабатывает все поддерживаемые приложения в пределах выбранного LSPosed scope. Если включен, обработка идет только в пакетах из списка ниже."))
-        column.addView(packagesInput)
-        column.addView(routingActionRow())
-        column.addView(actionRow())
-        column.addView(section("Диагностика"))
-        column.addView(body("Лог показывает последние срабатывания хуков, найденные WebRTC-стэки и активные пакеты. Экран сам подтягивает новые записи каждые несколько секунд, так что можно быстро понять, цепляется ли приложение без логката."))
-        column.addView(logsActionRow())
-        column.addView(logsText)
+        panel(
+            title = "Обработка",
+            subtitle = "Тут настраивается сам голосовой движок: режим, сила эффекта и усиление микрофона. После сохранения настройки уходят прямо в модуль.",
+        ).also { panel ->
+            panel.addView(enabledSwitch)
+            panel.addView(space(10))
+            panel.addView(label("Режим"))
+            panel.addView(modeSpinner)
+            panel.addView(space(12))
+            panel.addView(label("Сила эффекта"))
+            panel.addView(effectValue)
+            panel.addView(effectSeek)
+            panel.addView(space(12))
+            panel.addView(label("Усиление микрофона"))
+            panel.addView(gainValue)
+            panel.addView(gainSeek)
+            panel.addView(space(12))
+            panel.addView(actionRow())
+            column.addView(panel)
+        }
+
+        panel(
+            title = "LSPosed Scope",
+            subtitle = "Это список, который стоит включить в scope модуля в LSPosed. Я вывожу его и здесь, и в метаданных модуля для самого менеджера.",
+        ).also { panel ->
+            panel.addView(scopeText)
+            column.addView(panel)
+        }
+
+        panel(
+            title = "Маршрутизация",
+            subtitle = "Если ограничение выключено, модуль обрабатывает все поддерживаемые приложения в пределах LSPosed scope. Если включено, обработка идет только по списку ниже.",
+        ).also { panel ->
+            panel.addView(restrictSwitch)
+            panel.addView(space(10))
+            panel.addView(packagesInput)
+            panel.addView(space(12))
+            panel.addView(routingActionRow())
+            column.addView(panel)
+        }
+
+        panel(
+            title = "Диагностика",
+            subtitle = "Лог нужен, чтобы быстро понять, какой слой сработал: AudioRecord, WebRTC или AAudio. Он обновляется сам, без logcat.",
+        ).also { panel ->
+            panel.addView(logsActionRow())
+            panel.addView(space(10))
+            panel.addView(logsText)
+            column.addView(panel)
+        }
 
         root.addView(column)
         setContentView(root)
 
         bindModeSpinner()
+        renderScopeHint(ModuleConfigClient.recommendedScope())
         reloadFromModule(showToast = false)
     }
 
@@ -171,22 +218,18 @@ class MainActivity : AppCompatActivity() {
     private fun actionRow(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.START
-        setPadding(0, dp(18), 0, 0)
 
         addView(actionButton("Сохранить") {
-            if (!ModuleConfigClient.isModuleAvailable(this@MainActivity)) {
-                toast("Модуль не найден. Установи Voicechanger Module и открой экран снова.")
-                updateStatusPreview()
-                return@actionButton
-            }
             runCatching {
                 ModuleConfigClient.save(this@MainActivity, readConfigFromUi())
             }.onSuccess {
+                refreshAvailability()
                 applyConfigToUi(it)
                 reloadLogs(showToast = false)
-                toast("Настройки сохранены.")
+                toast("Настройки сохранены в модуль.")
             }.onFailure {
-                toast("Не удалось сохранить настройки: ${it.message ?: it::class.java.simpleName}")
+                refreshAvailability()
+                toast("Не удалось сохранить настройки. ${failureHint()}")
             }
         })
 
@@ -197,18 +240,15 @@ class MainActivity : AppCompatActivity() {
         })
 
         addView(actionButton("Сброс") {
-            if (!ModuleConfigClient.isModuleAvailable(this@MainActivity)) {
-                toast("Модуль не найден.")
-                updateStatusPreview()
-                return@actionButton
-            }
             runCatching {
                 ModuleConfigClient.reset(this@MainActivity)
             }.onSuccess {
+                refreshAvailability()
                 applyConfigToUi(it)
-                toast("Конфиг сброшен.")
+                toast("Конфиг модуля сброшен.")
             }.onFailure {
-                toast("Не удалось сбросить настройки: ${it.message ?: it::class.java.simpleName}")
+                refreshAvailability()
+                toast("Не удалось сбросить настройки. ${failureHint()}")
             }
         }.apply {
             setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
@@ -218,16 +258,12 @@ class MainActivity : AppCompatActivity() {
     private fun routingActionRow(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.START
-        setPadding(0, dp(10), 0, dp(4))
 
-        addView(actionButton("Реком. пакеты") {
+        addView(actionButton("Реком. scope") {
             val packages = currentModuleInfo?.recommendedScopes.orEmpty()
-            if (packages.isEmpty()) {
-                toast("Модуль еще не отдал рекомендуемый scope.")
-                return@actionButton
-            }
+                .ifEmpty { ModuleConfigClient.recommendedScope() }
             applyPackagePreset(packages)
-            toast("Подставлен рекомендуемый список пакетов.")
+            toast("Подставлен рекомендуемый LSPosed scope.")
         })
 
         addView(actionButton("Из логов") {
@@ -253,7 +289,7 @@ class MainActivity : AppCompatActivity() {
             suppressUiCallbacks = true
             restrictSwitch.isChecked = false
             packagesInput.isEnabled = false
-            packagesInput.alpha = 0.6f
+            packagesInput.alpha = 0.55f
             suppressUiCallbacks = false
             updateStatusPreview()
             toast("Ограничение по пакетам отключено.")
@@ -265,24 +301,21 @@ class MainActivity : AppCompatActivity() {
     private fun logsActionRow(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.START
-        setPadding(0, dp(12), 0, dp(6))
 
         addView(actionButton("Обновить логи") {
             reloadLogs(showToast = true)
         })
 
         addView(actionButton("Очистить логи") {
-            if (!ModuleConfigClient.isModuleAvailable(this@MainActivity)) {
-                toast("Модуль не найден.")
-                return@actionButton
-            }
             runCatching {
                 ModuleConfigClient.clearLogs(this@MainActivity)
             }.onSuccess {
                 renderLogs(emptyList())
+                refreshAvailability()
                 toast("Логи очищены.")
             }.onFailure {
-                toast("Не удалось очистить логи: ${it.message ?: it::class.java.simpleName}")
+                refreshAvailability()
+                toast("Не удалось очистить логи. ${failureHint()}")
             }
         }.apply {
             setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
@@ -291,19 +324,20 @@ class MainActivity : AppCompatActivity() {
 
     private fun actionButton(text: String, onClick: () -> Unit): Button = Button(this).apply {
         this.text = text
+        setAllCaps(false)
+        minHeight = dp(44)
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(12).toFloat()
+            setColor(Color.parseColor("#103B5A"))
+        }
+        setTextColor(Color.WHITE)
+        setPadding(dp(14), dp(10), dp(14), dp(10))
         setOnClickListener { onClick() }
     }
 
     private fun reloadFromModule(showToast: Boolean) {
-        if (!ModuleConfigClient.isModuleAvailable(this)) {
-            applyConfigToUi(VoiceConfig())
-            renderModuleInfo(null)
-            renderLogs(emptyList())
-            if (showToast) {
-                toast("Модуль пока не установлен или не виден системе.")
-            }
-            return
-        }
+        refreshAvailability()
 
         runCatching {
             ModuleConfigClient.load(this)
@@ -311,7 +345,6 @@ class MainActivity : AppCompatActivity() {
             applyConfigToUi(it)
         }.onFailure {
             applyConfigToUi(VoiceConfig())
-            toast("Не удалось загрузить конфиг модуля: ${it.message ?: it::class.java.simpleName}")
         }
 
         runCatching {
@@ -323,16 +356,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         reloadLogs(showToast = false)
+
         if (showToast) {
-            toast("Настройки загружены из модуля.")
+            toast(
+                when {
+                    currentAvailability.providerCallable -> "Настройки загружены из модуля."
+                    currentAvailability.packageInstalled -> "Пакет модуля найден, но provider не отвечает."
+                    else -> "Модуль не найден. Установи module-release.apk."
+                },
+            )
         }
     }
 
     private fun reloadLogs(showToast: Boolean) {
-        if (!ModuleConfigClient.isModuleAvailable(this)) {
-            renderLogs(emptyList())
-            return
-        }
+        refreshAvailability()
 
         runCatching {
             ModuleConfigClient.loadLogs(this)
@@ -344,7 +381,7 @@ class MainActivity : AppCompatActivity() {
         }.onFailure {
             renderLogs(emptyList())
             if (showToast) {
-                toast("Не удалось загрузить логи: ${it.message ?: it::class.java.simpleName}")
+                toast("Не удалось загрузить логи. ${failureHint()}")
             }
         }
     }
@@ -354,7 +391,7 @@ class MainActivity : AppCompatActivity() {
         enabledSwitch.isChecked = config.enabled
         restrictSwitch.isChecked = config.restrictToTargets
         packagesInput.isEnabled = config.restrictToTargets
-        packagesInput.alpha = if (config.restrictToTargets) 1f else 0.6f
+        packagesInput.alpha = if (config.restrictToTargets) 1f else 0.55f
         packagesInput.setText(config.targetPackages.joinToString("\n"))
         modeSpinner.setSelection(modeItems.indexOf(config.mode).coerceAtLeast(0), false)
         effectSeek.progress = config.effectStrength
@@ -379,35 +416,45 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderModuleInfo(info: ModuleInfo?) {
         currentModuleInfo = info
+        renderScopeHint(info?.recommendedScopes ?: ModuleConfigClient.recommendedScope())
         moduleInfoText.text = if (info == null) {
-            "Информация о модуле пока недоступна. Проверь установку APK модуля, включение в LSPosed и повтори загрузку."
+            buildString {
+                append("Модуль пока не ответил.\n")
+                append(currentAvailability.describe())
+                append("\n\nПоставь именно пару APK из одного run: module-release и companion-release.")
+            }
         } else {
             buildString {
                 append("Версия: ${info.versionName} (${info.versionCode})\n")
                 append("Активных слоев: ${info.activeTargets.size}\n")
-                append("Запланировано далее: ${info.plannedTargets.size}\n")
-                append("Рекомендуемый LSPosed scope:\n")
-                append(
-                    if (info.recommendedScopes.isEmpty()) {
-                        "список не получен"
-                    } else {
-                        info.recommendedScopes.joinToString("\n")
-                    },
-                )
+                append("План дальше: ${info.plannedTargets.size}\n")
+                append("Handshake: ${currentAvailability.describe()}")
             }
         }
         updateStatusPreview()
     }
 
+    private fun renderScopeHint(packages: List<String>) {
+        val normalized = packages
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+
+        scopeText.text = buildString {
+            append("Включи в LSPosed вот это:\n")
+            append(normalized.joinToString("\n") { "• $it" })
+        }
+    }
+
     private fun renderValueLabels() {
-        effectValue.text = "Текущая сила: ${effectSeek.progress}%"
-        gainValue.text = "Текущий уровень: ${gainSeek.progress}%"
+        effectValue.text = "Сейчас: ${effectSeek.progress}%"
+        gainValue.text = "Сейчас: ${gainSeek.progress}%"
     }
 
     private fun renderLogs(events: List<DiagnosticEvent>) {
         lastLogs = events
         logsText.text = if (events.isEmpty()) {
-            "Логов пока нет. Запусти целевое приложение, дай ему доступ к микрофону и попробуй голосовую активность."
+            "Логов пока нет. Запусти целевое приложение, дай ему доступ к микрофону и проверь голосовую активность."
         } else {
             events.take(25).joinToString("\n\n") { event ->
                 val time = DateFormat.format("HH:mm:ss", Date(event.timestampMs))
@@ -432,30 +479,39 @@ class MainActivity : AppCompatActivity() {
         updateStatusPreview()
     }
 
+    private fun refreshAvailability() {
+        currentAvailability = ModuleConfigClient.inspect(this)
+        updateStatusPreview()
+    }
+
+    private fun failureHint(): String =
+        when {
+            currentAvailability.providerCallable -> currentAvailability.describe()
+            currentAvailability.packageInstalled -> "Пакет модуля есть, но provider не отвечает. Переустанови оба release APK из одного run. ${currentAvailability.describe()}"
+            else -> "Companion не видит пакет модуля. Установи module-release.apk. ${currentAvailability.describe()}"
+        }
+
     private fun updateStatusPreview() {
-        val available = ModuleConfigClient.isModuleAvailable(this)
         val config = readConfigFromUi()
         statusText.text = buildString {
-            append(if (available) "Модуль найден. " else "Модуль не найден. ")
+            append(if (currentAvailability.isAvailable) "Модуль на связи. " else "Модуль оффлайн. ")
+            append(currentAvailability.describe())
+            append("\n\n")
             append(
                 if (config.enabled) {
-                    "Режим «${config.mode.title}», сила ${config.effectStrength}% и усиление ${config.micGainPercent}%. "
+                    "Активен режим «${config.mode.title}», сила ${config.effectStrength}% и усиление ${config.micGainPercent}%."
                 } else {
-                    "Обработка выключена. "
+                    "Обработка выключена."
                 },
             )
+            append("\n")
             append(
                 if (config.restrictToTargets) {
-                    "Ограничение по пакетам включено: ${config.targetPackages.size} шт."
+                    "Пакетное ограничение включено: ${config.targetPackages.size} шт."
                 } else {
-                    "Обработка будет идти во всех поддерживаемых пакетах."
+                    "Обработка идет по всему выбранному LSPosed scope."
                 },
             )
-            currentModuleInfo?.let {
-                if (it.recommendedScopes.isNotEmpty()) {
-                    append(" Реком. scope: ${it.recommendedScopes.size} пакетов.")
-                }
-            }
         }
     }
 
@@ -473,28 +529,99 @@ class MainActivity : AppCompatActivity() {
             override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
         }
 
-    private fun toast(message: String) {
-        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+    private fun headerBlock(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(0, 0, 0, dp(10))
+        addView(TextView(this@MainActivity).apply {
+            text = "Voicechanger"
+            setTextColor(Color.parseColor("#102A43"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 30f)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        addView(TextView(this@MainActivity).apply {
+            text = "Root companion для LSPosed-модуля. Управляет эффектами, маршрутизацией и live-диагностикой по AudioRecord, WebRTC и AAudio."
+            setTextColor(Color.parseColor("#486581"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setLineSpacing(dp(3).toFloat(), 1.0f)
+        })
     }
 
-    private fun title(text: String) = TextView(this).apply {
-        this.text = text
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 28f)
-        setTypeface(typeface, Typeface.BOLD)
-        gravity = Gravity.START
+    private fun panel(title: String, subtitle: String): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(18).toFloat()
+            setColor(Color.parseColor("#FFFDF8"))
+            setStroke(dp(1), Color.parseColor("#D9E2EC"))
+        }
+        val padding = dp(16)
+        setPadding(padding, padding, padding, padding)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            bottomMargin = dp(14)
+        }
+        addView(TextView(this@MainActivity).apply {
+            text = title
+            setTextColor(Color.parseColor("#102A43"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        addView(TextView(this@MainActivity).apply {
+            text = subtitle
+            setTextColor(Color.parseColor("#52606D"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            setLineSpacing(dp(3).toFloat(), 1.0f)
+            setPadding(0, dp(6), 0, dp(12))
+        })
     }
 
-    private fun section(text: String) = TextView(this).apply {
+    private fun divider(): View = View(this).apply {
+        setBackgroundColor(Color.parseColor("#D9E2EC"))
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(1),
+        ).apply {
+            topMargin = dp(12)
+            bottomMargin = dp(12)
+        }
+    }
+
+    private fun label(text: String) = TextView(this).apply {
         this.text = text
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+        setTextColor(Color.parseColor("#102A43"))
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         setTypeface(typeface, Typeface.BOLD)
-        setPadding(0, dp(20), 0, dp(8))
     }
 
     private fun body(text: String) = TextView(this).apply {
         this.text = text
+        setTextColor(Color.parseColor("#243B53"))
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         setLineSpacing(dp(3).toFloat(), 1.0f)
+    }
+
+    private fun monoBody(text: String) = body(text).apply {
+        setTypeface(Typeface.MONOSPACE)
+    }
+
+    private fun fieldBackground() = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(12).toFloat()
+        setColor(Color.parseColor("#FFFFFF"))
+        setStroke(dp(1), Color.parseColor("#BCCCDC"))
+    }
+
+    private fun space(valueDp: Int): View = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(valueDp),
+        )
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
     }
 
     private fun dp(value: Int): Int =

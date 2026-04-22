@@ -6,17 +6,70 @@ import com.qwulise.voicechanger.core.ModuleInfo
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
 
+data class ModuleAvailability(
+    val releaseInstalled: Boolean,
+    val debugInstalled: Boolean,
+    val providerVisible: Boolean,
+    val providerCallable: Boolean,
+) {
+    val packageInstalled: Boolean
+        get() = releaseInstalled || debugInstalled
+
+    val isAvailable: Boolean
+        get() = providerCallable || providerVisible
+
+    fun describe(): String = buildString {
+        append("Пакет: ")
+        append(
+            when {
+                releaseInstalled && debugInstalled -> "release + debug"
+                releaseInstalled -> "release"
+                debugInstalled -> "debug"
+                else -> "не найден"
+            },
+        )
+        append(" • provider: ")
+        append(if (providerVisible) "виден" else "не виден")
+        append(" • handshake: ")
+        append(if (providerCallable) "ok" else "нет ответа")
+    }
+}
+
 object ModuleConfigClient {
+    private const val MODULE_RELEASE_PACKAGE = "com.qwulise.voicechanger.module"
+    private const val MODULE_DEBUG_PACKAGE = "com.qwulise.voicechanger.module.debug"
+
+    fun inspect(context: Context): ModuleAvailability {
+        val packageManager = context.packageManager
+        val providerVisible = packageManager.resolveContentProvider(VoiceConfigContract.AUTHORITY, 0) != null
+        val providerCallable = runCatching {
+            context.contentResolver.call(
+                VoiceConfigContract.CONTENT_URI,
+                VoiceConfigContract.METHOD_GET_MODULE_INFO,
+                null,
+                null,
+            ) != null
+        }.getOrDefault(false)
+
+        return ModuleAvailability(
+            releaseInstalled = isPackageInstalled(packageManager, MODULE_RELEASE_PACKAGE),
+            debugInstalled = isPackageInstalled(packageManager, MODULE_DEBUG_PACKAGE),
+            providerVisible = providerVisible,
+            providerCallable = providerCallable,
+        )
+    }
+
     fun isModuleAvailable(context: Context): Boolean =
-        context.packageManager.resolveContentProvider(VoiceConfigContract.AUTHORITY, 0) != null ||
-            runCatching {
-                context.contentResolver.call(
-                    VoiceConfigContract.CONTENT_URI,
-                    VoiceConfigContract.METHOD_GET_MODULE_INFO,
-                    null,
-                    null,
-                ) != null
-            }.getOrDefault(false)
+        inspect(context).isAvailable
+
+    fun recommendedScope(): List<String> = listOf(
+        "org.telegram.messenger",
+        "com.discord",
+        "com.whatsapp",
+        "org.thoughtcrime.securesms",
+        "org.signal.messenger",
+        "com.skype.raider",
+    )
 
     fun load(context: Context): VoiceConfig =
         VoiceConfig.fromBundle(
@@ -77,4 +130,9 @@ object ModuleConfigClient {
             null,
         )
     }
+
+    private fun isPackageInstalled(packageManager: android.content.pm.PackageManager, packageName: String): Boolean =
+        runCatching {
+            packageManager.getPackageInfo(packageName, 0)
+        }.isSuccess
 }

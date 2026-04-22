@@ -3,6 +3,7 @@
 
     <queries>
         <package android:name="com.qwulise.voicechanger.module" />
+        <package android:name="com.qwulise.voicechanger.module.debug" />
         <provider android:authorities="com.qwulise.voicechanger.module.config" />
     </queries>
 
