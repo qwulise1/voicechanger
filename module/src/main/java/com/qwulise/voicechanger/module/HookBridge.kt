@@ -14,6 +14,8 @@ import java.util.WeakHashMap
 object HookBridge {
     private val states = Collections.synchronizedMap(WeakHashMap<AudioRecord, VoiceProcessingState>())
     private val sessions = Collections.synchronizedMap(WeakHashMap<AudioRecord, AudioRecordSession>())
+    private val webRtcStates = Collections.synchronizedMap(WeakHashMap<Any, VoiceProcessingState>())
+    private val webRtcSessions = Collections.synchronizedMap(WeakHashMap<Any, WebRtcSession>())
     private val recentBuffers = Collections.synchronizedMap(WeakHashMap<ByteBuffer, ProcessedBufferStamp>())
 
     fun activeTargets(): List<String> = listOf(
@@ -22,7 +24,7 @@ object HookBridge {
         "ContentProvider-backed shared config",
         "Per-stream PCM state cache",
         "Per-app target package routing",
-        "WebRTC native buffer fallback bridge",
+        "WebRTC Java lifecycle and buffer bridge",
         "Ring-buffer live logs",
     )
 
@@ -39,6 +41,11 @@ object HookBridge {
     fun stateFor(audioRecord: AudioRecord): VoiceProcessingState =
         synchronized(states) {
             states.getOrPut(audioRecord) { VoiceProcessingState() }
+        }
+
+    fun stateForWebRtc(instance: Any): VoiceProcessingState =
+        synchronized(webRtcStates) {
+            webRtcStates.getOrPut(instance) { VoiceProcessingState() }
         }
 
     fun registerAudioRecord(audioRecord: AudioRecord, packageName: String): AudioRecordSession =
@@ -58,12 +65,47 @@ object HookBridge {
     fun sessionFor(audioRecord: AudioRecord): AudioRecordSession? =
         synchronized(sessions) { sessions[audioRecord] }
 
+    fun registerWebRtcInstance(
+        instance: Any,
+        packageName: String,
+        className: String,
+        sampleRate: Int? = null,
+        channelCount: Int? = null,
+        audioRecordFieldName: String? = null,
+        byteBufferFieldName: String? = null,
+    ): WebRtcSession =
+        synchronized(webRtcSessions) {
+            val merged = (webRtcSessions[instance] ?: WebRtcSession(
+                packageName = packageName,
+                className = className,
+            )).merge(
+                sampleRate = sampleRate,
+                channelCount = channelCount,
+                audioRecordFieldName = audioRecordFieldName,
+                byteBufferFieldName = byteBufferFieldName,
+            )
+            webRtcSessions[instance] = merged
+            merged
+        }
+
+    fun webRtcSessionFor(instance: Any): WebRtcSession? =
+        synchronized(webRtcSessions) { webRtcSessions[instance] }
+
     fun releaseAudioRecord(audioRecord: AudioRecord) {
         synchronized(states) {
             states.remove(audioRecord)
         }
         synchronized(sessions) {
             sessions.remove(audioRecord)
+        }
+    }
+
+    fun releaseWebRtcInstance(instance: Any) {
+        synchronized(webRtcStates) {
+            webRtcStates.remove(instance)
+        }
+        synchronized(webRtcSessions) {
+            webRtcSessions.remove(instance)
         }
     }
 
@@ -144,6 +186,36 @@ data class AudioRecordSession(
             AudioFormat.ENCODING_PCM_32BIT -> "PCM_32BIT"
             else -> value.toString()
         }
+}
+
+data class WebRtcSession(
+    val packageName: String,
+    val className: String,
+    val sampleRate: Int? = null,
+    val channelCount: Int? = null,
+    val audioRecordFieldName: String? = null,
+    val byteBufferFieldName: String? = null,
+    val createdAtMs: Long = System.currentTimeMillis(),
+) {
+    fun merge(
+        sampleRate: Int? = null,
+        channelCount: Int? = null,
+        audioRecordFieldName: String? = null,
+        byteBufferFieldName: String? = null,
+    ): WebRtcSession = copy(
+        sampleRate = sampleRate ?: this.sampleRate,
+        channelCount = channelCount ?: this.channelCount,
+        audioRecordFieldName = audioRecordFieldName ?: this.audioRecordFieldName,
+        byteBufferFieldName = byteBufferFieldName ?: this.byteBufferFieldName,
+    )
+
+    fun describe(): String = buildString {
+        append(className.substringAfterLast('.'))
+        sampleRate?.let { append(" rate=${it}Hz") }
+        channelCount?.let { append(" channels=$it") }
+        append(" audioRecordField=${audioRecordFieldName ?: "-"}")
+        append(" byteBufferField=${byteBufferFieldName ?: "-"}")
+    }
 }
 
 private data class ProcessedBufferStamp(

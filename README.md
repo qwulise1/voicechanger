@@ -28,7 +28,7 @@ Current MVP status:
 - The companion app saves configuration into the module through a content provider.
 - Four PCM modes are available right now: Original, Robot, Bright, and Deep.
 - Optional per-app package routing is available.
-- The module keeps a live diagnostic ring buffer and includes a WebRTC fallback bridge around `nativeDataIsRecorded`.
+- The module keeps a live diagnostic ring buffer and now covers the Java `WebRTC` path with lifecycle tracking and a `nativeDataIsRecorded` bridge.
 - Recommended LSPosed scope is declared in the manifest for common messaging and voice apps.
 - The companion app can fill routing from recommended packages or from recent live logs.
 
@@ -44,6 +44,6 @@ Detailed install notes are in [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Next Steps
 
-1. Extend interception beyond Java `AudioRecord` into deeper `WebRTC`, `AAudio`, and selected native paths.
+1. Extend interception beyond the completed Java capture layer into `AAudio`, `Oboe`, and vendor-native paths.
 2. Replace the current lightweight timbre effects with deeper pitch/formant DSP.
-3. Validate the hook chain on more real devices and app-specific audio pipelines.
+3. Validate the native hook chain on more real devices and app-specific audio pipelines.

@@ -17,4 +17,4 @@
    - `Весь scope` disables package restriction and processes every scoped app.
 7. Keep the diagnostics screen open while testing. The app refreshes hook logs automatically every few seconds.
 
-Current interception is strongest on Java `AudioRecord` paths and includes a WebRTC fallback bridge around `nativeDataIsRecorded`. Some native `AAudio/Oboe/vendor` paths can still require future hook work.
+The Java capture layer is covered end-to-end for `AudioRecord` and Java `WebRTC` paths, including lifecycle diagnostics and a `nativeDataIsRecorded` bridge. Native `AAudio/Oboe/vendor` paths can still require future hook work.

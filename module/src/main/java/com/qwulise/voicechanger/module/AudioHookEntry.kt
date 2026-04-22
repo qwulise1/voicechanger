@@ -193,13 +193,24 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 runCatching {
                     XposedBridge.hookAllMethods(clazz, methodName, object : XC_MethodHook() {
                         override fun afterHookedMethod(param: MethodHookParam) {
+                            val webRtcInstance = param.thisObject ?: return
                             val audioRecord = binding.audioRecord(param.thisObject)
                             val session = audioRecord?.let { HookBridge.registerAudioRecord(it, packageName) }
+                            val webRtcSession = HookBridge.registerWebRtcInstance(
+                                instance = webRtcInstance,
+                                packageName = packageName,
+                                className = className,
+                                sampleRate = binding.sampleRate(webRtcInstance) ?: inferSampleRate(param.args),
+                                channelCount = inferChannelCount(param.args),
+                                audioRecordFieldName = binding.audioRecordField?.name,
+                                byteBufferFieldName = binding.byteBufferField?.name,
+                            )
                             DiagnosticsClient.reportEvent(
                                 packageName = packageName,
                                 source = "WebRTC.$methodName",
                                 detail = buildString {
                                     append("Observed $methodName in $className")
+                                    append(" ${webRtcSession.describe()}")
                                     session?.let { append(" ${it.describe()}") }
                                 },
                                 rateKey = "$packageName|$className|$methodName",
@@ -210,15 +221,50 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 }
             }
 
+            listOf("stopRecording", "releaseAudioResources", "release").forEach { methodName ->
+                runCatching {
+                    XposedBridge.hookAllMethods(clazz, methodName, object : XC_MethodHook() {
+                        override fun beforeHookedMethod(param: MethodHookParam) {
+                            val webRtcInstance = param.thisObject ?: return
+                            val webRtcSession = HookBridge.registerWebRtcInstance(
+                                instance = webRtcInstance,
+                                packageName = packageName,
+                                className = className,
+                                sampleRate = binding.sampleRate(webRtcInstance),
+                                audioRecordFieldName = binding.audioRecordField?.name,
+                                byteBufferFieldName = binding.byteBufferField?.name,
+                            )
+                            DiagnosticsClient.reportEvent(
+                                packageName = packageName,
+                                source = "WebRTC.$methodName",
+                                detail = "Observed $methodName ${webRtcSession.describe()}",
+                                rateKey = "$packageName|$className|$methodName",
+                                minIntervalMs = 20_000L,
+                            )
+                            HookBridge.releaseWebRtcInstance(webRtcInstance)
+                        }
+                    })
+                }
+            }
+
             runCatching {
                 XposedBridge.hookAllMethods(clazz, "nativeDataIsRecorded", object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
+                        val webRtcInstance = param.thisObject ?: return
                         val byteCount = (param.args.firstOrNull() as? Int)?.coerceAtLeast(0) ?: 0
-                        val audioRecord = binding.audioRecord(param.thisObject)
-                        val byteBuffer = binding.byteBuffer(param.thisObject)
+                        val audioRecord = binding.audioRecord(webRtcInstance)
+                        val byteBuffer = binding.byteBuffer(webRtcInstance)
                         val session = audioRecord?.let { HookBridge.registerAudioRecord(it, packageName) }
+                        val webRtcSession = HookBridge.registerWebRtcInstance(
+                            instance = webRtcInstance,
+                            packageName = packageName,
+                            className = className,
+                            sampleRate = binding.sampleRate(webRtcInstance),
+                            audioRecordFieldName = binding.audioRecordField?.name,
+                            byteBufferFieldName = binding.byteBufferField?.name,
+                        )
                         val sampleRate = audioRecord?.sampleRate?.takeIf { it > 0 }
-                            ?: binding.sampleRate(param.thisObject)
+                            ?: webRtcSession.sampleRate
                             ?: session?.sampleRate
                             ?: 48_000
 
@@ -227,6 +273,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                             source = "WebRTC.nativeDataIsRecorded",
                             detail = buildString {
                                 append("Observed nativeDataIsRecorded bytes=$byteCount")
+                                append(" ${webRtcSession.describe()}")
                                 session?.let { append(" ${it.describe()}") }
                             },
                             rateKey = "$packageName|$className|nativeDataIsRecorded",
@@ -237,7 +284,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                         if (!config.enabled || !HookBridge.isTargetPackageAllowed(config, packageName)) {
                             return
                         }
-                        if (byteCount <= 0 || byteBuffer == null || audioRecord == null) {
+                        if (byteCount <= 0 || byteBuffer == null) {
                             return
                         }
                         if (!HookBridge.shouldProcessWebRtcBuffer(byteBuffer, byteCount)) {
@@ -245,18 +292,26 @@ class AudioHookEntry : IXposedHookLoadPackage {
                         }
 
                         runCatching {
+                            val state = audioRecord?.let { HookBridge.stateFor(it) }
+                                ?: HookBridge.stateForWebRtc(webRtcInstance)
                             PcmVoiceProcessor.processByteBufferPcm16(
                                 buffer = byteBuffer,
                                 byteCount = byteCount,
                                 sampleRate = sampleRate,
                                 config = config,
-                                state = HookBridge.stateFor(audioRecord),
+                                state = state,
                             )
                             HookBridge.markBufferProcessed(byteBuffer, byteCount, "WebRTC.nativeDataIsRecorded")
                             DiagnosticsClient.reportEvent(
                                 packageName = packageName,
                                 source = "WebRTC.bridge",
-                                detail = "Applied WebRTC fallback bytes=$byteCount rate=${sampleRate}Hz ${session?.describe().orEmpty()}",
+                                detail = buildString {
+                                    append("Applied WebRTC Java bridge bytes=$byteCount rate=${sampleRate}Hz")
+                                    append(" state=")
+                                    append(if (audioRecord != null) "AudioRecord" else "WebRTC")
+                                    append(" ${webRtcSession.describe()}")
+                                    session?.let { append(" ${it.describe()}") }
+                                },
                                 rateKey = "$packageName|$className|WebRTC.bridge.apply",
                                 minIntervalMs = 12_000L,
                             )
@@ -273,6 +328,15 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 })
             }
         }
+    }
+
+    private fun inferSampleRate(args: Array<out Any?>): Int? =
+        args.filterIsInstance<Int>().firstOrNull { it in 4_000..192_000 }
+
+    private fun inferChannelCount(args: Array<out Any?>): Int? {
+        val numbers = args.filterIsInstance<Int>()
+        val sampleRate = inferSampleRate(args)
+        return numbers.firstOrNull { it in 1..8 && it != sampleRate }
     }
 
     private object ConfigClient {
