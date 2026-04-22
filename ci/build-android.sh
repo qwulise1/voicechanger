@@ -14,7 +14,12 @@ echo "Gradle command: ${GRADLE_CMD}"
 echo "Log file: ${LOG_FILE}"
 
 set +e
-"${GRADLE_CMD}" --no-daemon --console=plain --stacktrace :app:assembleDebug :module:assembleDebug 2>&1 | tee "${LOG_FILE}"
+"${GRADLE_CMD}" --no-daemon --console=plain --stacktrace \
+  :app:assembleDebug \
+  :app:assembleRelease \
+  :module:assembleDebug \
+  :module:assembleRelease \
+  2>&1 | tee "${LOG_FILE}"
 status=${PIPESTATUS[0]}
 set -e
 

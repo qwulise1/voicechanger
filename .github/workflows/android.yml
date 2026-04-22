@@ -49,9 +49,23 @@ jobs:
           name: voicechanger-companion-debug
           path: app/build/outputs/apk/debug/*.apk
 
+      - name: Upload companion release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voicechanger-companion-release
+          path: app/build/outputs/apk/release/*.apk
+
       - name: Upload module APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: voicechanger-module-debug
           path: module/build/outputs/apk/debug/*.apk
+
+      - name: Upload module release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voicechanger-module-release
+          path: module/build/outputs/apk/release/*.apk

@@ -20,11 +20,13 @@ class ModuleEntryActivity : AppCompatActivity() {
         }
 
         column.addView(title("Voicechanger Module"))
-        column.addView(body("Это bootstrap-модуль под root-хуки. Здесь пока нет боевого interception layer, только заготовка проекта и карта следующего этапа."))
-        column.addView(section("Планируемые точки хука"))
+        column.addView(body("LSPosed-модуль уже перехватывает Java-путь AudioRecord и применяет живую обработку PCM по настройкам из companion APK."))
+        column.addView(section("Активно сейчас"))
+        column.addView(body(HookBridge.activeTargets().joinToString("\n") { "• $it" }))
+        column.addView(section("Доступные режимы"))
+        column.addView(body(HookBridge.activeProfiles().joinToString("\n") { "• $it" }))
+        column.addView(section("Следующий этап"))
         column.addView(body(HookBridge.plannedTargets().joinToString("\n") { "• $it" }))
-        column.addView(section("Подготовленные профили"))
-        column.addView(body(HookBridge.plannedProfiles().joinToString("\n") { "• $it" }))
 
         root.addView(column)
         setContentView(root)

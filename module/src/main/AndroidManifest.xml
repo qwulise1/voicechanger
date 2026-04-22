@@ -20,11 +20,15 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Root hook bootstrap for the Voicechanger project." />
+            android:value="Microphone voice effects for scoped apps through AudioRecord interception." />
         <meta-data
             android:name="xposedminversion"
             android:value="93" />
+
+        <provider
+            android:name=".VoiceConfigProvider"
+            android:authorities="com.qwulise.voicechanger.module.config"
+            android:exported="true" />
     </application>
 
 </manifest>
-
