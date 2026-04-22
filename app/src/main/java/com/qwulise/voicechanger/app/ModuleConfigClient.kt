@@ -8,7 +8,15 @@ import com.qwulise.voicechanger.core.VoiceConfigContract
 
 object ModuleConfigClient {
     fun isModuleAvailable(context: Context): Boolean =
-        context.packageManager.resolveContentProvider(VoiceConfigContract.AUTHORITY, 0) != null
+        context.packageManager.resolveContentProvider(VoiceConfigContract.AUTHORITY, 0) != null ||
+            runCatching {
+                context.contentResolver.call(
+                    VoiceConfigContract.CONTENT_URI,
+                    VoiceConfigContract.METHOD_GET_MODULE_INFO,
+                    null,
+                    null,
+                ) != null
+            }.getOrDefault(false)
 
     fun load(context: Context): VoiceConfig =
         VoiceConfig.fromBundle(
