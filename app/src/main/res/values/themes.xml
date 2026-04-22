@@ -1,0 +1,4 @@
+<resources>
+    <style name="Theme.Voicechanger.Companion" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+</resources>
+
