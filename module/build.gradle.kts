@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "com.qwulise.voicechanger.module"
     compileSdk = 35
+    ndkVersion = "27.1.12297006"
 
     defaultConfig {
         applicationId = "com.qwulise.voicechanger.module"
@@ -13,6 +14,16 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
+
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags += listOf("-std=c++20", "-fvisibility=hidden")
+            }
+        }
     }
 
     buildTypes {
@@ -36,6 +47,13 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 }
 

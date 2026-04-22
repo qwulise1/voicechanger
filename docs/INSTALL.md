@@ -17,4 +17,4 @@
    - `Весь scope` disables package restriction and processes every scoped app.
 7. Keep the diagnostics screen open while testing. The app refreshes hook logs automatically every few seconds.
 
-The Java capture layer is covered end-to-end for `AudioRecord` and Java `WebRTC` paths, including lifecycle diagnostics and a `nativeDataIsRecorded` bridge. Native `AAudio/Oboe/vendor` paths can still require future hook work.
+The current module fully covers `AudioRecord`, Java `WebRTC`, and blocking `AAudioStream_read(...)`, with native diagnostics for `AAudio` callback-mode detection. Callback `AAudio`, `Oboe`, and vendor-specific native paths can still require additional hook work.
