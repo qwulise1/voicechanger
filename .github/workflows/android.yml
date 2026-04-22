@@ -25,16 +25,32 @@ jobs:
         with:
           gradle-version: 8.7
 
+      - name: Print toolchain versions
+        run: |
+          java -version
+          gradle --version
+
       - name: Build companion and module APKs
-        run: gradle --no-daemon :app:assembleDebug :module:assembleDebug
+        shell: bash
+        run: ./ci/build-android.sh
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-log
+          path: build/ci/android-build.log
+          if-no-files-found: warn
 
       - name: Upload companion APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: voicechanger-companion-debug
           path: app/build/outputs/apk/debug/*.apk
 
       - name: Upload module APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: voicechanger-module-debug

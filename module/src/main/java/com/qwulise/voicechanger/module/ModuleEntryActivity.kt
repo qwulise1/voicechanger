@@ -46,10 +46,9 @@ class ModuleEntryActivity : AppCompatActivity() {
     private fun body(text: String) = TextView(this).apply {
         this.text = text
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        lineSpacingExtra = dp(3).toFloat()
+        setLineSpacing(dp(3).toFloat(), 1.0f)
     }
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 }
-
