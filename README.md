@@ -24,11 +24,11 @@ Current MVP status:
 
 - GitHub Actions build both APKs in the cloud.
 - GitHub Actions package a ready-to-download release bundle zip.
-- The module hooks Java `AudioRecord.read(...)` for scoped apps.
+- The module hooks Java `AudioRecord.read(...)` and `AudioRecord` lifecycle for scoped apps.
 - The companion app saves configuration into the module through a content provider.
 - Four PCM modes are available right now: Original, Robot, Bright, and Deep.
 - Optional per-app package routing is available.
-- The module keeps a live diagnostic ring buffer and reports WebRTC detection events.
+- The module keeps a live diagnostic ring buffer and includes a WebRTC fallback bridge around `nativeDataIsRecorded`.
 - Recommended LSPosed scope is declared in the manifest for common messaging and voice apps.
 - The companion app can fill routing from recommended packages or from recent live logs.
 
