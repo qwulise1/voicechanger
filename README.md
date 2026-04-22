@@ -26,10 +26,11 @@ Current MVP status:
 - The module hooks Java `AudioRecord.read(...)` for scoped apps.
 - The companion app saves configuration into the module through a content provider.
 - Four PCM modes are available right now: Original, Robot, Bright, and Deep.
+- Optional per-app package routing is available.
+- The module keeps a live diagnostic ring buffer and reports WebRTC detection events.
 
 ## Next Steps
 
-1. Extend interception beyond Java `AudioRecord` into `WebRTC`, `AAudio`, and selected native paths.
-2. Add per-app allow/deny routing and live diagnostics.
-3. Replace the current lightweight timbre effects with deeper pitch/formant DSP.
-4. Add release packaging and optional GitHub Releases publishing.
+1. Extend interception beyond Java `AudioRecord` into deeper `WebRTC`, `AAudio`, and selected native paths.
+2. Replace the current lightweight timbre effects with deeper pitch/formant DSP.
+3. Add release packaging and optional GitHub Releases publishing.

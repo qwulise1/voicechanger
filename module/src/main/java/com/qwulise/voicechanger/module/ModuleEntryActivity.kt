@@ -20,7 +20,7 @@ class ModuleEntryActivity : AppCompatActivity() {
         }
 
         column.addView(title("Voicechanger Module"))
-        column.addView(body("LSPosed-модуль уже перехватывает Java-путь AudioRecord и применяет живую обработку PCM по настройкам из companion APK."))
+        column.addView(body("LSPosed-модуль уже перехватывает Java-путь AudioRecord, применяет живую обработку PCM по настройкам из companion APK и пишет live-диагностику по пакетам."))
         column.addView(section("Активно сейчас"))
         column.addView(body(HookBridge.activeTargets().joinToString("\n") { "• $it" }))
         column.addView(section("Доступные режимы"))

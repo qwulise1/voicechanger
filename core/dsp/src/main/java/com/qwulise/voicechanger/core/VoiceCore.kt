@@ -61,6 +61,8 @@ data class VoiceConfig(
     val modeId: String = VoiceMode.default.id,
     val effectStrength: Int = 55,
     val micGainPercent: Int = 100,
+    val restrictToTargets: Boolean = false,
+    val targetPackages: Set<String> = emptySet(),
 ) {
     val mode: VoiceMode
         get() = VoiceMode.fromId(modeId)
@@ -68,6 +70,10 @@ data class VoiceConfig(
     fun sanitized(): VoiceConfig = copy(
         effectStrength = effectStrength.coerceIn(0, 100),
         micGainPercent = micGainPercent.coerceIn(0, 200),
+        targetPackages = targetPackages
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSortedSet(),
         modeId = mode.id,
     )
 
@@ -76,6 +82,11 @@ data class VoiceConfig(
         putString(VoiceConfigContract.KEY_MODE_ID, mode.id)
         putInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, effectStrength.coerceIn(0, 100))
         putInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, micGainPercent.coerceIn(0, 200))
+        putBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, restrictToTargets)
+        putStringArrayList(
+            VoiceConfigContract.KEY_TARGET_PACKAGES,
+            ArrayList(targetPackages.map { it.trim() }.filter { it.isNotEmpty() }.sorted()),
+        )
     }
 
     companion object {
@@ -85,7 +96,51 @@ data class VoiceConfig(
                 modeId = bundle?.getString(VoiceConfigContract.KEY_MODE_ID) ?: VoiceMode.default.id,
                 effectStrength = bundle?.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 55) ?: 55,
                 micGainPercent = bundle?.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 100) ?: 100,
+                restrictToTargets = bundle?.getBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false) ?: false,
+                targetPackages = bundle?.getStringArrayList(VoiceConfigContract.KEY_TARGET_PACKAGES)?.toSet() ?: emptySet(),
             ).sanitized()
+    }
+}
+
+data class DiagnosticEvent(
+    val timestampMs: Long,
+    val packageName: String,
+    val source: String,
+    val detail: String,
+) {
+    fun encode(): String = listOf(
+        timestampMs.toString(),
+        escapeLogField(packageName),
+        escapeLogField(source),
+        escapeLogField(detail),
+    ).joinToString(LOG_FIELD_SEPARATOR.toString())
+
+    companion object {
+        private const val LOG_FIELD_SEPARATOR = '\u001f'
+
+        fun decode(line: String): DiagnosticEvent? {
+            val parts = line.split(LOG_FIELD_SEPARATOR)
+            if (parts.size != 4) {
+                return null
+            }
+            val timestamp = parts[0].toLongOrNull() ?: return null
+            return DiagnosticEvent(
+                timestampMs = timestamp,
+                packageName = unescapeLogField(parts[1]),
+                source = unescapeLogField(parts[2]),
+                detail = unescapeLogField(parts[3]),
+            )
+        }
+
+        private fun escapeLogField(value: String): String =
+            value.replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace(LOG_FIELD_SEPARATOR.toString(), "\\u001f")
+
+        private fun unescapeLogField(value: String): String =
+            value.replace("\\u001f", LOG_FIELD_SEPARATOR.toString())
+                .replace("\\n", "\n")
+                .replace("\\\\", "\\")
     }
 }
 
@@ -96,11 +151,21 @@ object VoiceConfigContract {
     const val METHOD_GET_CONFIG = "get_config"
     const val METHOD_PUT_CONFIG = "put_config"
     const val METHOD_RESET_CONFIG = "reset_config"
+    const val METHOD_GET_LOGS = "get_logs"
+    const val METHOD_CLEAR_LOGS = "clear_logs"
+    const val METHOD_APPEND_LOG = "append_log"
 
     const val KEY_ENABLED = "enabled"
     const val KEY_MODE_ID = "mode_id"
     const val KEY_EFFECT_STRENGTH = "effect_strength"
     const val KEY_MIC_GAIN_PERCENT = "mic_gain_percent"
+    const val KEY_RESTRICT_TO_TARGETS = "restrict_to_targets"
+    const val KEY_TARGET_PACKAGES = "target_packages"
+    const val KEY_LOG_LINES = "log_lines"
+    const val KEY_LOG_PACKAGE_NAME = "log_package_name"
+    const val KEY_LOG_SOURCE = "log_source"
+    const val KEY_LOG_DETAIL = "log_detail"
+    const val KEY_LOG_TIMESTAMP_MS = "log_timestamp_ms"
 }
 
 class VoiceProcessingState {

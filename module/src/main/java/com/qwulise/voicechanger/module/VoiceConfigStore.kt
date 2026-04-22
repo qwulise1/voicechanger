@@ -13,6 +13,8 @@ class VoiceConfigStore(context: Context) {
             ?: VoiceConfig().modeId,
         effectStrength = preferences.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 55),
         micGainPercent = preferences.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 100),
+        restrictToTargets = preferences.getBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false),
+        targetPackages = preferences.getStringSet(VoiceConfigContract.KEY_TARGET_PACKAGES, emptySet()) ?: emptySet(),
     ).sanitized()
 
     fun write(config: VoiceConfig): VoiceConfig {
@@ -22,6 +24,8 @@ class VoiceConfigStore(context: Context) {
             .putString(VoiceConfigContract.KEY_MODE_ID, sanitized.modeId)
             .putInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, sanitized.effectStrength)
             .putInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, sanitized.micGainPercent)
+            .putBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, sanitized.restrictToTargets)
+            .putStringSet(VoiceConfigContract.KEY_TARGET_PACKAGES, sanitized.targetPackages)
             .apply()
         return sanitized
     }

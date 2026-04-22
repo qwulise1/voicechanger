@@ -1,6 +1,7 @@
 package com.qwulise.voicechanger.module
 
 import android.media.AudioRecord
+import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceMode
 import com.qwulise.voicechanger.core.VoiceProcessingState
 import com.qwulise.voicechanger.core.VoiceProfileCatalog
@@ -14,6 +15,9 @@ object HookBridge {
         "AudioRecord.read(...) Java hook",
         "ContentProvider-backed shared config",
         "Per-stream PCM state cache",
+        "Per-app target package routing",
+        "WebRTC detection diagnostics",
+        "Ring-buffer live logs",
     )
 
     fun plannedTargets(): List<String> = listOf(
@@ -30,6 +34,13 @@ object HookBridge {
         synchronized(states) {
             states.getOrPut(audioRecord) { VoiceProcessingState() }
         }
+
+    fun isTargetPackageAllowed(config: VoiceConfig, packageName: String): Boolean {
+        if (!config.restrictToTargets) {
+            return true
+        }
+        return packageName in config.targetPackages
+    }
 
     fun shouldHookPackage(packageName: String): Boolean = packageName !in setOf(
         "android",

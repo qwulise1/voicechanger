@@ -1,6 +1,7 @@
 package com.qwulise.voicechanger.app
 
 import android.content.Context
+import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
 
@@ -37,4 +38,24 @@ object ModuleConfigClient {
                 null,
             ),
         )
+
+    fun loadLogs(context: Context): List<DiagnosticEvent> =
+        context.contentResolver.call(
+            VoiceConfigContract.CONTENT_URI,
+            VoiceConfigContract.METHOD_GET_LOGS,
+            null,
+            null,
+        )?.getStringArrayList(VoiceConfigContract.KEY_LOG_LINES)
+            ?.mapNotNull(DiagnosticEvent::decode)
+            ?.sortedByDescending { it.timestampMs }
+            ?: emptyList()
+
+    fun clearLogs(context: Context) {
+        context.contentResolver.call(
+            VoiceConfigContract.CONTENT_URI,
+            VoiceConfigContract.METHOD_CLEAR_LOGS,
+            null,
+            null,
+        )
+    }
 }

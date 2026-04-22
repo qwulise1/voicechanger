@@ -29,6 +29,8 @@ The root module is expected to evolve through the following layers:
 - LSPosed `module` reads that config from injected app processes with caching
 - `AudioRecord.read(...)` overloads for `byte[]`, `short[]`, `float[]`, and `ByteBuffer` are processed
 - current DSP is lightweight and real-time safe: original, robot, bright, deep, plus mic gain
+- package routing can be set to all apps or a manual target list
+- the module keeps a shared ring-buffer log for recent hook hits and WebRTC detections
 
 ## Still missing for a broader "global" result
 

@@ -2,12 +2,15 @@ package com.qwulise.voicechanger.app
 
 import android.graphics.Typeface
 import android.os.Bundle
+import android.text.InputType
+import android.text.format.DateFormat
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -16,17 +19,22 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.switchmaterial.SwitchMaterial
+import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceMode
+import java.util.Date
 
 class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var enabledSwitch: SwitchMaterial
+    private lateinit var restrictSwitch: SwitchMaterial
     private lateinit var modeSpinner: Spinner
     private lateinit var effectValue: TextView
     private lateinit var effectSeek: SeekBar
     private lateinit var gainValue: TextView
     private lateinit var gainSeek: SeekBar
+    private lateinit var packagesInput: EditText
+    private lateinit var logsText: TextView
 
     private val modeItems = VoiceMode.entries.toList()
     private var suppressUiCallbacks = false
@@ -50,6 +58,16 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+        restrictSwitch = SwitchMaterial(this).apply {
+            text = "Только выбранные пакеты"
+            setOnCheckedChangeListener { _, isChecked ->
+                packagesInput.isEnabled = isChecked
+                packagesInput.alpha = if (isChecked) 1f else 0.6f
+                if (!suppressUiCallbacks) {
+                    updateStatusPreview()
+                }
+            }
+        }
         modeSpinner = Spinner(this)
         effectValue = body("")
         effectSeek = SeekBar(this).apply {
@@ -59,14 +77,22 @@ class MainActivity : AppCompatActivity() {
         gainValue = body("")
         gainSeek = SeekBar(this).apply {
             max = 200
-            setOnSeekBarChangeListener(simpleSeekListener {
-                renderValueLabels()
-                updateStatusPreview()
-            })
+            setOnSeekBarChangeListener(simpleSeekListener { updateStatusPreview() })
+        }
+        packagesInput = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            minLines = 4
+            gravity = Gravity.TOP or Gravity.START
+            hint = "org.telegram.messenger\ncom.discord\ncom.whatsapp"
+        }
+        logsText = body("Логи еще не загружены.").apply {
+            setTypeface(Typeface.MONOSPACE)
         }
 
         column.addView(title("Voicechanger Companion"))
-        column.addView(body("Настройка root-модуля для перехвата микрофона через LSPosed. Сейчас модуль обрабатывает PCM после AudioRecord.read(...), поэтому эффект работает в scoped-приложениях прямо на входе микрофона."))
+        column.addView(body("Companion APK для LSPosed-модуля. Здесь можно включать обработку, ограничивать ее по пакетам и смотреть живую диагностику того, в каком приложении сработали хуки."))
         column.addView(section("Статус"))
         column.addView(statusText)
         column.addView(section("Обработка"))
@@ -79,11 +105,15 @@ class MainActivity : AppCompatActivity() {
         column.addView(section("Усиление микрофона"))
         column.addView(gainValue)
         column.addView(gainSeek)
+        column.addView(section("Маршрутизация"))
+        column.addView(restrictSwitch)
+        column.addView(body("Если переключатель выключен, модуль обрабатывает все поддерживаемые приложения. Если включен, обработка идет только в пакетах из списка ниже."))
+        column.addView(packagesInput)
         column.addView(actionRow())
-        column.addView(section("Что сейчас умеет"))
-        column.addView(body("• Оригинал + микрофонный буст\n• Робот\n• Яркий тембр\n• Глубокий тембр\n• Общая конфигурация через ContentProvider между модулем и companion APK"))
-        column.addView(section("Что дальше"))
-        column.addView(body("Следующий этап после этого MVP: WebRTC / native hooks, выбор конкретных пакетов, live-диагностика и более сложные pitch/formant эффекты."))
+        column.addView(section("Диагностика"))
+        column.addView(body("Лог показывает последние срабатывания хуков, найденные WebRTC-стэки и активные пакеты. Это помогает понять, цепляется ли приложение без логката."))
+        column.addView(logsActionRow())
+        column.addView(logsText)
 
         root.addView(column)
         setContentView(root)
@@ -116,7 +146,7 @@ class MainActivity : AppCompatActivity() {
 
         addView(actionButton("Сохранить") {
             if (!ModuleConfigClient.isModuleAvailable(this@MainActivity)) {
-                toast("Модуль не найден. Установи Voicechanger Module и открой экран еще раз.")
+                toast("Модуль не найден. Установи Voicechanger Module и открой экран снова.")
                 updateStatusPreview()
                 return@actionButton
             }
@@ -124,7 +154,8 @@ class MainActivity : AppCompatActivity() {
                 ModuleConfigClient.save(this@MainActivity, readConfigFromUi())
             }.onSuccess {
                 applyConfigToUi(it)
-                toast("Настройки сохранены в модуль.")
+                reloadLogs(showToast = false)
+                toast("Настройки сохранены.")
             }.onFailure {
                 toast("Не удалось сохранить настройки: ${it.message ?: it::class.java.simpleName}")
             }
@@ -146,9 +177,36 @@ class MainActivity : AppCompatActivity() {
                 ModuleConfigClient.reset(this@MainActivity)
             }.onSuccess {
                 applyConfigToUi(it)
-                toast("Конфиг модуля сброшен.")
+                toast("Конфиг сброшен.")
             }.onFailure {
                 toast("Не удалось сбросить настройки: ${it.message ?: it::class.java.simpleName}")
+            }
+        }.apply {
+            setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
+        })
+    }
+
+    private fun logsActionRow(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.START
+        setPadding(0, dp(12), 0, dp(6))
+
+        addView(actionButton("Обновить логи") {
+            reloadLogs(showToast = true)
+        })
+
+        addView(actionButton("Очистить логи") {
+            if (!ModuleConfigClient.isModuleAvailable(this@MainActivity)) {
+                toast("Модуль не найден.")
+                return@actionButton
+            }
+            runCatching {
+                ModuleConfigClient.clearLogs(this@MainActivity)
+            }.onSuccess {
+                renderLogs(emptyList())
+                toast("Логи очищены.")
+            }.onFailure {
+                toast("Не удалось очистить логи: ${it.message ?: it::class.java.simpleName}")
             }
         }.apply {
             setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
@@ -163,6 +221,7 @@ class MainActivity : AppCompatActivity() {
     private fun reloadFromModule(showToast: Boolean) {
         if (!ModuleConfigClient.isModuleAvailable(this)) {
             applyConfigToUi(VoiceConfig())
+            renderLogs(emptyList())
             if (showToast) {
                 toast("Модуль пока не установлен или не виден системе.")
             }
@@ -173,18 +232,45 @@ class MainActivity : AppCompatActivity() {
             ModuleConfigClient.load(this)
         }.onSuccess {
             applyConfigToUi(it)
+            reloadLogs(showToast = false)
             if (showToast) {
                 toast("Настройки загружены из модуля.")
             }
         }.onFailure {
             applyConfigToUi(VoiceConfig())
+            renderLogs(emptyList())
             toast("Не удалось загрузить конфиг модуля: ${it.message ?: it::class.java.simpleName}")
+        }
+    }
+
+    private fun reloadLogs(showToast: Boolean) {
+        if (!ModuleConfigClient.isModuleAvailable(this)) {
+            renderLogs(emptyList())
+            return
+        }
+
+        runCatching {
+            ModuleConfigClient.loadLogs(this)
+        }.onSuccess {
+            renderLogs(it)
+            if (showToast) {
+                toast("Логи обновлены.")
+            }
+        }.onFailure {
+            renderLogs(emptyList())
+            if (showToast) {
+                toast("Не удалось загрузить логи: ${it.message ?: it::class.java.simpleName}")
+            }
         }
     }
 
     private fun applyConfigToUi(config: VoiceConfig) {
         suppressUiCallbacks = true
         enabledSwitch.isChecked = config.enabled
+        restrictSwitch.isChecked = config.restrictToTargets
+        packagesInput.isEnabled = config.restrictToTargets
+        packagesInput.alpha = if (config.restrictToTargets) 1f else 0.6f
+        packagesInput.setText(config.targetPackages.joinToString("\n"))
         modeSpinner.setSelection(modeItems.indexOf(config.mode).coerceAtLeast(0), false)
         effectSeek.progress = config.effectStrength
         gainSeek.progress = config.micGainPercent
@@ -198,11 +284,28 @@ class MainActivity : AppCompatActivity() {
         modeId = modeItems.getOrElse(modeSpinner.selectedItemPosition) { VoiceMode.default }.id,
         effectStrength = effectSeek.progress,
         micGainPercent = gainSeek.progress,
+        restrictToTargets = restrictSwitch.isChecked,
+        targetPackages = packagesInput.text.toString()
+            .split("\n", ",", ";", " ")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet(),
     ).sanitized()
 
     private fun renderValueLabels() {
         effectValue.text = "Текущая сила: ${effectSeek.progress}%"
         gainValue.text = "Текущий уровень: ${gainSeek.progress}%"
+    }
+
+    private fun renderLogs(events: List<DiagnosticEvent>) {
+        logsText.text = if (events.isEmpty()) {
+            "Логов пока нет. Запусти целевое приложение, дай ему доступ к микрофону и попробуй голосовую активность."
+        } else {
+            events.take(25).joinToString("\n\n") { event ->
+                val time = DateFormat.format("HH:mm:ss", Date(event.timestampMs))
+                "[$time] ${event.packageName}\n${event.source}\n${event.detail}"
+            }
+        }
     }
 
     private fun updateStatusPreview() {
@@ -212,9 +315,16 @@ class MainActivity : AppCompatActivity() {
             append(if (available) "Модуль найден. " else "Модуль не найден. ")
             append(
                 if (config.enabled) {
-                    "Сейчас выбран режим «${config.mode.title}», сила ${config.effectStrength}% и усиление микрофона ${config.micGainPercent}%."
+                    "Режим «${config.mode.title}», сила ${config.effectStrength}% и усиление ${config.micGainPercent}%. "
                 } else {
-                    "Обработка выключена. После включения можно использовать любой режим и микрофонный буст."
+                    "Обработка выключена. "
+                },
+            )
+            append(
+                if (config.restrictToTargets) {
+                    "Ограничение по пакетам включено: ${config.targetPackages.size} шт."
+                } else {
+                    "Обработка будет идти во всех поддерживаемых пакетах."
                 },
             )
         }
