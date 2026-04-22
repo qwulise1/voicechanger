@@ -20,11 +20,13 @@ class ModuleEntryActivity : AppCompatActivity() {
         }
 
         column.addView(title("Voicechanger Module"))
-        column.addView(body("LSPosed-модуль уже перехватывает Java-путь AudioRecord, применяет живую обработку PCM по настройкам из companion APK и пишет live-диагностику по пакетам."))
+        column.addView(body("LSPosed-модуль уже перехватывает Java-путь AudioRecord, применяет живую обработку PCM по настройкам из companion APK и пишет live-диагностику по пакетам. Для работы пакет все равно должен входить в LSPosed scope."))
         column.addView(section("Активно сейчас"))
         column.addView(body(HookBridge.activeTargets().joinToString("\n") { "• $it" }))
         column.addView(section("Доступные режимы"))
         column.addView(body(HookBridge.activeProfiles().joinToString("\n") { "• $it" }))
+        column.addView(section("Рекомендуемый scope"))
+        column.addView(body(resources.getStringArray(R.array.recommended_scopes).joinToString("\n") { "• $it" }))
         column.addView(section("Следующий этап"))
         column.addView(body(HookBridge.plannedTargets().joinToString("\n") { "• $it" }))
 

@@ -20,7 +20,10 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Microphone voice effects for scoped apps through AudioRecord interception." />
+            android:value="Scoped microphone voice effects with live config, routing, and diagnostics." />
+        <meta-data
+            android:name="xposedscope"
+            android:resource="@array/recommended_scopes" />
         <meta-data
             android:name="xposedminversion"
             android:value="93" />

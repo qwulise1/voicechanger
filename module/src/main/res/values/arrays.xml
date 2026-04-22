@@ -1,0 +1,10 @@
+<resources>
+    <string-array name="recommended_scopes">
+        <item>org.telegram.messenger</item>
+        <item>com.discord</item>
+        <item>com.whatsapp</item>
+        <item>org.thoughtcrime.securesms</item>
+        <item>org.signal.messenger</item>
+        <item>com.skype.raider</item>
+    </string-array>
+</resources>

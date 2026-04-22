@@ -2,6 +2,7 @@ package com.qwulise.voicechanger.app
 
 import android.content.Context
 import com.qwulise.voicechanger.core.DiagnosticEvent
+import com.qwulise.voicechanger.core.ModuleInfo
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
 
@@ -34,6 +35,16 @@ object ModuleConfigClient {
             context.contentResolver.call(
                 VoiceConfigContract.CONTENT_URI,
                 VoiceConfigContract.METHOD_RESET_CONFIG,
+                null,
+                null,
+            ),
+        )
+
+    fun loadModuleInfo(context: Context): ModuleInfo =
+        ModuleInfo.fromBundle(
+            context.contentResolver.call(
+                VoiceConfigContract.CONTENT_URI,
+                VoiceConfigContract.METHOD_GET_MODULE_INFO,
                 null,
                 null,
             ),

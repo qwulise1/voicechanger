@@ -144,6 +144,40 @@ data class DiagnosticEvent(
     }
 }
 
+data class ModuleInfo(
+    val versionName: String = "unknown",
+    val versionCode: Long = 0,
+    val activeTargets: List<String> = emptyList(),
+    val plannedTargets: List<String> = emptyList(),
+    val recommendedScopes: List<String> = emptyList(),
+) {
+    fun toBundle(): Bundle = Bundle().apply {
+        putString(VoiceConfigContract.KEY_MODULE_VERSION_NAME, versionName)
+        putLong(VoiceConfigContract.KEY_MODULE_VERSION_CODE, versionCode)
+        putStringArrayList(VoiceConfigContract.KEY_ACTIVE_TARGETS, ArrayList(activeTargets))
+        putStringArrayList(VoiceConfigContract.KEY_PLANNED_TARGETS, ArrayList(plannedTargets))
+        putStringArrayList(VoiceConfigContract.KEY_RECOMMENDED_SCOPES, ArrayList(recommendedScopes))
+    }
+
+    companion object {
+        fun fromBundle(bundle: Bundle?): ModuleInfo =
+            ModuleInfo(
+                versionName = bundle?.getString(VoiceConfigContract.KEY_MODULE_VERSION_NAME).orEmpty()
+                    .ifBlank { "unknown" },
+                versionCode = bundle?.getLong(VoiceConfigContract.KEY_MODULE_VERSION_CODE, 0) ?: 0,
+                activeTargets = bundle?.getStringArrayList(VoiceConfigContract.KEY_ACTIVE_TARGETS)
+                    ?.filter { it.isNotBlank() }
+                    ?: emptyList(),
+                plannedTargets = bundle?.getStringArrayList(VoiceConfigContract.KEY_PLANNED_TARGETS)
+                    ?.filter { it.isNotBlank() }
+                    ?: emptyList(),
+                recommendedScopes = bundle?.getStringArrayList(VoiceConfigContract.KEY_RECOMMENDED_SCOPES)
+                    ?.filter { it.isNotBlank() }
+                    ?: emptyList(),
+            )
+    }
+}
+
 object VoiceConfigContract {
     const val AUTHORITY = "com.qwulise.voicechanger.module.config"
     val CONTENT_URI: Uri = Uri.parse("content://$AUTHORITY/config")
@@ -151,6 +185,7 @@ object VoiceConfigContract {
     const val METHOD_GET_CONFIG = "get_config"
     const val METHOD_PUT_CONFIG = "put_config"
     const val METHOD_RESET_CONFIG = "reset_config"
+    const val METHOD_GET_MODULE_INFO = "get_module_info"
     const val METHOD_GET_LOGS = "get_logs"
     const val METHOD_CLEAR_LOGS = "clear_logs"
     const val METHOD_APPEND_LOG = "append_log"
@@ -166,6 +201,11 @@ object VoiceConfigContract {
     const val KEY_LOG_SOURCE = "log_source"
     const val KEY_LOG_DETAIL = "log_detail"
     const val KEY_LOG_TIMESTAMP_MS = "log_timestamp_ms"
+    const val KEY_MODULE_VERSION_NAME = "module_version_name"
+    const val KEY_MODULE_VERSION_CODE = "module_version_code"
+    const val KEY_ACTIVE_TARGETS = "active_targets"
+    const val KEY_PLANNED_TARGETS = "planned_targets"
+    const val KEY_RECOMMENDED_SCOPES = "recommended_scopes"
 }
 
 class VoiceProcessingState {

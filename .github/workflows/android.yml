@@ -34,6 +34,11 @@ jobs:
         shell: bash
         run: ./ci/build-android.sh
 
+      - name: Package release bundle
+        if: success()
+        shell: bash
+        run: ./ci/package-release-bundle.sh
+
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -69,3 +74,10 @@ jobs:
         with:
           name: voicechanger-module-release
           path: module/build/outputs/apk/release/*.apk
+
+      - name: Upload release bundle
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voicechanger-release-bundle
+          path: build/ci/voicechanger-*-release-bundle.zip

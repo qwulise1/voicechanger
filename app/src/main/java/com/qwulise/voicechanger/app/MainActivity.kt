@@ -2,6 +2,8 @@ package com.qwulise.voicechanger.app
 
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.text.format.DateFormat
 import android.util.TypedValue
@@ -20,12 +22,14 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.qwulise.voicechanger.core.DiagnosticEvent
+import com.qwulise.voicechanger.core.ModuleInfo
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceMode
 import java.util.Date
 
 class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
+    private lateinit var moduleInfoText: TextView
     private lateinit var enabledSwitch: SwitchMaterial
     private lateinit var restrictSwitch: SwitchMaterial
     private lateinit var modeSpinner: Spinner
@@ -37,7 +41,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var logsText: TextView
 
     private val modeItems = VoiceMode.entries.toList()
+    private val uiHandler = Handler(Looper.getMainLooper())
     private var suppressUiCallbacks = false
+    private var currentModuleInfo: ModuleInfo? = null
+    private var lastLogs: List<DiagnosticEvent> = emptyList()
+    private val logsRefreshRunnable = object : Runnable {
+        override fun run() {
+            if (ModuleConfigClient.isModuleAvailable(this@MainActivity)) {
+                reloadLogs(showToast = false)
+            }
+            uiHandler.postDelayed(this, LOG_REFRESH_INTERVAL_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,6 +65,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         statusText = body("")
+        moduleInfoText = body("")
         enabledSwitch = SwitchMaterial(this).apply {
             text = "Включить обработку"
             setOnCheckedChangeListener { _, _ ->
@@ -92,9 +108,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         column.addView(title("Voicechanger Companion"))
-        column.addView(body("Companion APK для LSPosed-модуля. Здесь можно включать обработку, ограничивать ее по пакетам и смотреть живую диагностику того, в каком приложении сработали хуки."))
+        column.addView(body("Companion APK для LSPosed-модуля. Здесь можно включать обработку, ограничивать ее по пакетам и смотреть живую диагностику того, в каком приложении сработали хуки. В LSPosed модуль еще должен быть включен в scope нужных приложений."))
         column.addView(section("Статус"))
         column.addView(statusText)
+        column.addView(section("Модуль"))
+        column.addView(moduleInfoText)
         column.addView(section("Обработка"))
         column.addView(enabledSwitch)
         column.addView(section("Режим"))
@@ -107,11 +125,12 @@ class MainActivity : AppCompatActivity() {
         column.addView(gainSeek)
         column.addView(section("Маршрутизация"))
         column.addView(restrictSwitch)
-        column.addView(body("Если переключатель выключен, модуль обрабатывает все поддерживаемые приложения. Если включен, обработка идет только в пакетах из списка ниже."))
+        column.addView(body("Если переключатель выключен, модуль обрабатывает все поддерживаемые приложения в пределах выбранного LSPosed scope. Если включен, обработка идет только в пакетах из списка ниже."))
         column.addView(packagesInput)
+        column.addView(routingActionRow())
         column.addView(actionRow())
         column.addView(section("Диагностика"))
-        column.addView(body("Лог показывает последние срабатывания хуков, найденные WebRTC-стэки и активные пакеты. Это помогает понять, цепляется ли приложение без логката."))
+        column.addView(body("Лог показывает последние срабатывания хуков, найденные WebRTC-стэки и активные пакеты. Экран сам подтягивает новые записи каждые несколько секунд, так что можно быстро понять, цепляется ли приложение без логката."))
         column.addView(logsActionRow())
         column.addView(logsText)
 
@@ -120,6 +139,16 @@ class MainActivity : AppCompatActivity() {
 
         bindModeSpinner()
         reloadFromModule(showToast = false)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        uiHandler.post(logsRefreshRunnable)
+    }
+
+    override fun onStop() {
+        uiHandler.removeCallbacks(logsRefreshRunnable)
+        super.onStop()
     }
 
     private fun bindModeSpinner() {
@@ -186,6 +215,53 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    private fun routingActionRow(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.START
+        setPadding(0, dp(10), 0, dp(4))
+
+        addView(actionButton("Реком. пакеты") {
+            val packages = currentModuleInfo?.recommendedScopes.orEmpty()
+            if (packages.isEmpty()) {
+                toast("Модуль еще не отдал рекомендуемый scope.")
+                return@actionButton
+            }
+            applyPackagePreset(packages)
+            toast("Подставлен рекомендуемый список пакетов.")
+        })
+
+        addView(actionButton("Из логов") {
+            val packages = lastLogs
+                .map { it.packageName }
+                .filter { it.isNotBlank() }
+                .filterNot {
+                    it == packageName || it == "com.qwulise.voicechanger.module" || it == "com.qwulise.voicechanger.app"
+                }
+                .distinct()
+                .sorted()
+            if (packages.isEmpty()) {
+                toast("В логах пока нет пакетов для подстановки.")
+                return@actionButton
+            }
+            applyPackagePreset(packages)
+            toast("Список пакетов собран из последних логов.")
+        }.apply {
+            setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
+        })
+
+        addView(actionButton("Весь scope") {
+            suppressUiCallbacks = true
+            restrictSwitch.isChecked = false
+            packagesInput.isEnabled = false
+            packagesInput.alpha = 0.6f
+            suppressUiCallbacks = false
+            updateStatusPreview()
+            toast("Ограничение по пакетам отключено.")
+        }.apply {
+            setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
+        })
+    }
+
     private fun logsActionRow(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.START
@@ -221,6 +297,7 @@ class MainActivity : AppCompatActivity() {
     private fun reloadFromModule(showToast: Boolean) {
         if (!ModuleConfigClient.isModuleAvailable(this)) {
             applyConfigToUi(VoiceConfig())
+            renderModuleInfo(null)
             renderLogs(emptyList())
             if (showToast) {
                 toast("Модуль пока не установлен или не виден системе.")
@@ -232,14 +309,22 @@ class MainActivity : AppCompatActivity() {
             ModuleConfigClient.load(this)
         }.onSuccess {
             applyConfigToUi(it)
-            reloadLogs(showToast = false)
-            if (showToast) {
-                toast("Настройки загружены из модуля.")
-            }
         }.onFailure {
             applyConfigToUi(VoiceConfig())
-            renderLogs(emptyList())
             toast("Не удалось загрузить конфиг модуля: ${it.message ?: it::class.java.simpleName}")
+        }
+
+        runCatching {
+            ModuleConfigClient.loadModuleInfo(this)
+        }.onSuccess {
+            renderModuleInfo(it)
+        }.onFailure {
+            renderModuleInfo(null)
+        }
+
+        reloadLogs(showToast = false)
+        if (showToast) {
+            toast("Настройки загружены из модуля.")
         }
     }
 
@@ -292,12 +377,35 @@ class MainActivity : AppCompatActivity() {
             .toSet(),
     ).sanitized()
 
+    private fun renderModuleInfo(info: ModuleInfo?) {
+        currentModuleInfo = info
+        moduleInfoText.text = if (info == null) {
+            "Информация о модуле пока недоступна. Проверь установку APK модуля, включение в LSPosed и повтори загрузку."
+        } else {
+            buildString {
+                append("Версия: ${info.versionName} (${info.versionCode})\n")
+                append("Активных слоев: ${info.activeTargets.size}\n")
+                append("Запланировано далее: ${info.plannedTargets.size}\n")
+                append("Рекомендуемый LSPosed scope:\n")
+                append(
+                    if (info.recommendedScopes.isEmpty()) {
+                        "список не получен"
+                    } else {
+                        info.recommendedScopes.joinToString("\n")
+                    },
+                )
+            }
+        }
+        updateStatusPreview()
+    }
+
     private fun renderValueLabels() {
         effectValue.text = "Текущая сила: ${effectSeek.progress}%"
         gainValue.text = "Текущий уровень: ${gainSeek.progress}%"
     }
 
     private fun renderLogs(events: List<DiagnosticEvent>) {
+        lastLogs = events
         logsText.text = if (events.isEmpty()) {
             "Логов пока нет. Запусти целевое приложение, дай ему доступ к микрофону и попробуй голосовую активность."
         } else {
@@ -306,6 +414,22 @@ class MainActivity : AppCompatActivity() {
                 "[$time] ${event.packageName}\n${event.source}\n${event.detail}"
             }
         }
+    }
+
+    private fun applyPackagePreset(packages: List<String>) {
+        val normalized = packages
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .sorted()
+
+        suppressUiCallbacks = true
+        restrictSwitch.isChecked = true
+        packagesInput.isEnabled = true
+        packagesInput.alpha = 1f
+        packagesInput.setText(normalized.joinToString("\n"))
+        suppressUiCallbacks = false
+        updateStatusPreview()
     }
 
     private fun updateStatusPreview() {
@@ -327,6 +451,11 @@ class MainActivity : AppCompatActivity() {
                     "Обработка будет идти во всех поддерживаемых пакетах."
                 },
             )
+            currentModuleInfo?.let {
+                if (it.recommendedScopes.isNotEmpty()) {
+                    append(" Реком. scope: ${it.recommendedScopes.size} пакетов.")
+                }
+            }
         }
     }
 
@@ -370,4 +499,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
+
+    companion object {
+        private const val LOG_REFRESH_INTERVAL_MS = 5_000L
+    }
 }

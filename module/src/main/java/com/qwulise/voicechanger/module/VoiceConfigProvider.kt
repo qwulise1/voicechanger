@@ -7,6 +7,7 @@ import android.database.MatrixCursor
 import android.net.Uri
 import android.os.Bundle
 import com.qwulise.voicechanger.core.DiagnosticEvent
+import com.qwulise.voicechanger.core.ModuleInfo
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
 
@@ -25,6 +26,7 @@ class VoiceConfigProvider : ContentProvider() {
             VoiceConfigContract.METHOD_GET_CONFIG -> store.read().toBundle()
             VoiceConfigContract.METHOD_PUT_CONFIG -> store.write(VoiceConfig.fromBundle(extras)).toBundle()
             VoiceConfigContract.METHOD_RESET_CONFIG -> store.reset().toBundle()
+            VoiceConfigContract.METHOD_GET_MODULE_INFO -> buildModuleInfo()
             VoiceConfigContract.METHOD_GET_LOGS -> Bundle().apply {
                 putStringArrayList(
                     VoiceConfigContract.KEY_LOG_LINES,
@@ -92,4 +94,18 @@ class VoiceConfigProvider : ContentProvider() {
         selection: String?,
         selectionArgs: Array<out String>?,
     ): Int = 0
+
+    private fun buildModuleInfo(): Bundle {
+        val appContext = requireNotNull(context)
+        val packageInfo = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+        return ModuleInfo(
+            versionName = packageInfo.versionName.orEmpty().ifBlank { "unknown" },
+            versionCode = packageInfo.longVersionCode,
+            activeTargets = HookBridge.activeTargets(),
+            plannedTargets = HookBridge.plannedTargets(),
+            recommendedScopes = appContext.resources
+                .getStringArray(R.array.recommended_scopes)
+                .toList(),
+        ).toBundle()
+    }
 }
