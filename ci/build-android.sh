@@ -41,6 +41,9 @@ echo "Gradle build failed with exit code ${status}"
 echo "Last 200 lines from ${LOG_FILE}:"
 tail -n 200 "${LOG_FILE}" || true
 
+annotation_message="$(tail -n 25 "${LOG_FILE}" | tr '\n' ' ' | tr '\r' ' ' | sed 's/  */ /g' | cut -c1-600)"
+echo "::error title=Gradle build failed::${annotation_message}"
+
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
   {
     echo "## Android CI Failed"

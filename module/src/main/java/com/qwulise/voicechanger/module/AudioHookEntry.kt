@@ -2,7 +2,6 @@ package com.qwulise.voicechanger.module
 
 import android.app.Application
 import android.media.AudioRecord
-import android.nio.ByteBuffer
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
@@ -11,8 +10,7 @@ import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import java.util.Collections
-import java.util.WeakHashMap
+import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioHookEntry : IXposedHookLoadPackage {
