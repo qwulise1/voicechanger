@@ -2,6 +2,10 @@ package com.qwulise.voicechanger.app
 
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigFileBridge
+import com.qwulise.voicechanger.core.SoundpadFileBridge
+import com.qwulise.voicechanger.core.SoundpadLibrary
+import com.qwulise.voicechanger.core.SoundpadPlayback
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 object RootConfigPublisher {
@@ -38,6 +42,57 @@ object RootConfigPublisher {
 
     fun readRootConfig(packageName: String): VoiceConfig? =
         VoiceConfigFileBridge.readConfigFile(VoiceConfigFileBridge.configPathFor(packageName))
+
+    fun publishSoundpadLibrary(packageName: String, library: SoundpadLibrary) {
+        val rawLibrary = SoundpadFileBridge.encodeLibrary(library)
+        val libraryPath = SoundpadFileBridge.libraryPathFor(packageName)
+        val playbackPath = SoundpadFileBridge.playbackPathFor(packageName)
+        val script = """
+            umask 000
+            mkdir -p /data/local/tmp
+            mkdir -p ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
+            cat > ${libraryPath}
+            touch ${playbackPath}
+            chmod 666 ${libraryPath} ${playbackPath}
+            chmod 777 ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
+        """.trimIndent()
+        runSu(script, rawLibrary)
+    }
+
+    fun publishSoundpadPlayback(packageName: String, playback: SoundpadPlayback) {
+        val rawPlayback = SoundpadFileBridge.encodePlayback(playback)
+        val playbackPath = SoundpadFileBridge.playbackPathFor(packageName)
+        val libraryPath = SoundpadFileBridge.libraryPathFor(packageName)
+        val script = """
+            umask 000
+            mkdir -p /data/local/tmp
+            mkdir -p ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
+            touch ${libraryPath}
+            cat > ${playbackPath}
+            chmod 666 ${libraryPath} ${playbackPath}
+            chmod 777 ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
+        """.trimIndent()
+        runSu(script, rawPlayback)
+    }
+
+    fun publishSoundpadClip(packageName: String, slotId: String, sourceFile: File) {
+        require(sourceFile.isFile) { "PCM source file not found: ${sourceFile.absolutePath}" }
+        val targetPath = SoundpadFileBridge.pcmPathFor(packageName, slotId)
+        val script = """
+            umask 000
+            mkdir -p ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
+            cp '${sourceFile.absolutePath}' '${targetPath}'
+            chmod 666 '${targetPath}'
+            chmod 777 ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
+        """.trimIndent()
+        runSu(script, "")
+    }
+
+    fun readRootSoundpadLibrary(packageName: String): SoundpadLibrary? =
+        SoundpadFileBridge.readLibraryFile(SoundpadFileBridge.libraryPathFor(packageName))
+
+    fun readRootSoundpadPlayback(packageName: String): SoundpadPlayback? =
+        SoundpadFileBridge.readPlaybackFile(SoundpadFileBridge.playbackPathFor(packageName))
 
     private fun runSu(script: String, stdin: String) {
         val process = ProcessBuilder("su", "-c", script)

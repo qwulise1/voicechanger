@@ -84,7 +84,8 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
 
         val config = ConfigClient.getConfig()
-        if (!config.enabled) {
+        val soundpadSnapshot = SoundpadClient.snapshot()
+        if (!config.enabled && !soundpadSnapshot.isActive) {
             DiagnosticsClient.reportEvent(
                 packageName = packageName,
                 source = "AudioRecord.read",
@@ -103,48 +104,95 @@ class AudioHookEntry : IXposedHookLoadPackage {
         when (val buffer = param.args.firstOrNull()) {
             is ByteArray -> {
                 val offset = (param.args.getOrNull(1) as? Int) ?: 0
-                PcmVoiceProcessor.processByteArrayPcm16(
-                    buffer = buffer,
-                    offsetBytes = offset.coerceAtLeast(0),
-                    byteCount = readCount,
-                    sampleRate = sampleRate,
-                    config = config,
-                    state = state,
-                )
+                if (config.enabled) {
+                    PcmVoiceProcessor.processByteArrayPcm16(
+                        buffer = buffer,
+                        offsetBytes = offset.coerceAtLeast(0),
+                        byteCount = readCount,
+                        sampleRate = sampleRate,
+                        config = config,
+                        state = state,
+                    )
+                }
+                if (soundpadSnapshot.isActive) {
+                    SoundpadMixer.mixIntoByteArrayPcm16(
+                        buffer = buffer,
+                        offsetBytes = offset.coerceAtLeast(0),
+                        byteCount = readCount,
+                        outputSampleRate = sampleRate,
+                        state = state,
+                        snapshot = soundpadSnapshot,
+                    )
+                }
             }
 
             is ShortArray -> {
                 val offset = (param.args.getOrNull(1) as? Int) ?: 0
-                PcmVoiceProcessor.processShortArray(
-                    samples = buffer,
-                    offset = offset.coerceAtLeast(0),
-                    count = readCount,
-                    sampleRate = sampleRate,
-                    config = config,
-                    state = state,
-                )
+                if (config.enabled) {
+                    PcmVoiceProcessor.processShortArray(
+                        samples = buffer,
+                        offset = offset.coerceAtLeast(0),
+                        count = readCount,
+                        sampleRate = sampleRate,
+                        config = config,
+                        state = state,
+                    )
+                }
+                if (soundpadSnapshot.isActive) {
+                    SoundpadMixer.mixIntoShortArray(
+                        samples = buffer,
+                        offset = offset.coerceAtLeast(0),
+                        count = readCount,
+                        outputSampleRate = sampleRate,
+                        state = state,
+                        snapshot = soundpadSnapshot,
+                    )
+                }
             }
 
             is FloatArray -> {
                 val offset = (param.args.getOrNull(1) as? Int) ?: 0
-                PcmVoiceProcessor.processFloatArray(
-                    samples = buffer,
-                    offset = offset.coerceAtLeast(0),
-                    count = readCount,
-                    sampleRate = sampleRate,
-                    config = config,
-                    state = state,
-                )
+                if (config.enabled) {
+                    PcmVoiceProcessor.processFloatArray(
+                        samples = buffer,
+                        offset = offset.coerceAtLeast(0),
+                        count = readCount,
+                        sampleRate = sampleRate,
+                        config = config,
+                        state = state,
+                    )
+                }
+                if (soundpadSnapshot.isActive) {
+                    SoundpadMixer.mixIntoFloatArray(
+                        samples = buffer,
+                        offset = offset.coerceAtLeast(0),
+                        count = readCount,
+                        outputSampleRate = sampleRate,
+                        state = state,
+                        snapshot = soundpadSnapshot,
+                    )
+                }
             }
 
             is ByteBuffer -> {
-                PcmVoiceProcessor.processByteBufferPcm16(
-                    buffer = buffer,
-                    byteCount = readCount,
-                    sampleRate = sampleRate,
-                    config = config,
-                    state = state,
-                )
+                if (config.enabled) {
+                    PcmVoiceProcessor.processByteBufferPcm16(
+                        buffer = buffer,
+                        byteCount = readCount,
+                        sampleRate = sampleRate,
+                        config = config,
+                        state = state,
+                    )
+                }
+                if (soundpadSnapshot.isActive) {
+                    SoundpadMixer.mixIntoByteBufferPcm16(
+                        buffer = buffer,
+                        byteCount = readCount,
+                        outputSampleRate = sampleRate,
+                        state = state,
+                        snapshot = soundpadSnapshot,
+                    )
+                }
                 HookBridge.markBufferProcessed(buffer, readCount, "AudioRecord.read")
             }
 
@@ -163,7 +211,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
         DiagnosticsClient.reportEvent(
             packageName = packageName,
             source = "AudioRecord.read",
-            detail = "Processed read=$readCount rate=${sampleRate}Hz mode=${config.mode.id} boost=${config.micGainPercent} ${session.describe()}",
+            detail = "Processed read=$readCount rate=${sampleRate}Hz mode=${config.mode.id} boost=${config.micGainPercent} soundpad=${soundpadSnapshot.activeSlot?.id ?: "off"} ${session.describe()}",
             rateKey = "$packageName|AudioRecord.read|processed",
             minIntervalMs = 12_000L,
         )

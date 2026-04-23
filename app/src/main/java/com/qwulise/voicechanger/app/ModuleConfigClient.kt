@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.ModuleInfo
+import com.qwulise.voicechanger.core.SoundpadLibrary
+import com.qwulise.voicechanger.core.SoundpadPlayback
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
 
@@ -172,6 +174,26 @@ object ModuleConfigClient {
             )
         }
         RootConfigPublisher.appendRootLog(context.packageName, event)
+    }
+
+    fun loadSoundpadLibrary(context: Context): SoundpadLibrary =
+        RootConfigPublisher.readRootSoundpadLibrary(context.packageName)
+            ?: SoundpadLibrary()
+
+    fun saveSoundpadLibrary(context: Context, library: SoundpadLibrary): SoundpadLibrary {
+        val sanitized = library.sanitized()
+        RootConfigPublisher.publishSoundpadLibrary(context.packageName, sanitized)
+        return sanitized
+    }
+
+    fun loadSoundpadPlayback(context: Context): SoundpadPlayback =
+        RootConfigPublisher.readRootSoundpadPlayback(context.packageName)
+            ?: SoundpadPlayback()
+
+    fun saveSoundpadPlayback(context: Context, playback: SoundpadPlayback): SoundpadPlayback {
+        val sanitized = playback.sanitized()
+        RootConfigPublisher.publishSoundpadPlayback(context.packageName, sanitized)
+        return sanitized
     }
 
     private fun isPackageInstalled(packageManager: android.content.pm.PackageManager, packageName: String): Boolean =
