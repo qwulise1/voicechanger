@@ -38,7 +38,33 @@ class AudioHookEntry : IXposedHookLoadPackage {
         XposedBridge.hookAllMethods(AudioRecord::class.java, "stop", createAudioRecordStopHook(packageName))
         XposedBridge.hookAllMethods(AudioRecord::class.java, "release", createAudioRecordReleaseHook(packageName))
         XposedBridge.hookAllMethods(AudioRecord::class.java, "read", createAudioReadHook(packageName))
-        installWebRtcHooks(packageName, lpparam.classLoader)
+        XposedBridge.hookAllMethods(Application::class.java, "attach", createApplicationAttachHook(packageName, lpparam.classLoader))
+    }
+
+    private fun createApplicationAttachHook(packageName: String, classLoader: ClassLoader) = object : XC_MethodHook() {
+        override fun afterHookedMethod(param: MethodHookParam) {
+            if (!webRtcInstalled.compareAndSet(false, true)) {
+                return
+            }
+            DiagnosticsClient.reportEvent(
+                packageName = packageName,
+                source = "Application.attach",
+                detail = "Process attached, installing deferred WebRTC hooks.",
+                rateKey = "$packageName|Application.attach|WebRTC",
+                minIntervalMs = 20_000L,
+            )
+            runCatching {
+                installWebRtcHooks(packageName, classLoader)
+            }.onFailure {
+                DiagnosticsClient.reportEvent(
+                    packageName = packageName,
+                    source = "WebRTC.install",
+                    detail = "Deferred WebRTC hook install failed: ${it::class.java.simpleName}",
+                    rateKey = "$packageName|WebRTC.install.error",
+                    minIntervalMs = 20_000L,
+                )
+            }
+        }
     }
 
     private fun createAudioRecordConstructorHook(packageName: String) = object : XC_MethodHook() {
@@ -483,5 +509,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     companion object {
         private val installed = AtomicBoolean(false)
+        private val webRtcInstalled = AtomicBoolean(false)
     }
 }

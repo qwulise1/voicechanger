@@ -64,6 +64,7 @@ object ModuleConfigClient {
 
     fun recommendedScope(): List<String> = listOf(
         "org.telegram.messenger",
+        "org.telegram.messenger.beta",
         "com.discord",
         "com.whatsapp",
         "org.thoughtcrime.securesms",
