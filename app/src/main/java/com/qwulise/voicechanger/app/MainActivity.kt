@@ -134,7 +134,7 @@ class MainActivity : AppCompatActivity() {
 
         panel(
             title = "Диагностика",
-            subtitle = "Лог нужен, чтобы быстро понять, какой слой сработал: AudioRecord или WebRTC. Он обновляется сам, без logcat.",
+            subtitle = "Лог нужен, чтобы быстро понять, сработал ли safe-mode AudioRecord.read. Он обновляется сам, без logcat.",
         ).also { panel ->
             panel.addView(logsActionRow())
             panel.addView(space(10))
@@ -456,7 +456,7 @@ class MainActivity : AppCompatActivity() {
             setTypeface(typeface, Typeface.BOLD)
         })
         addView(TextView(this@MainActivity).apply {
-            text = "Root companion для LSPosed-модуля. Управляет эффектами, маршрутизацией и live-диагностикой по стабильным слоям AudioRecord и WebRTC."
+            text = "Root companion для LSPosed-модуля. Сейчас включен безопасный AudioRecord.read слой, чтобы изолировать вылеты Telegram."
             setTextColor(palette.secondaryText)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setLineSpacing(dp(3).toFloat(), 1.0f)

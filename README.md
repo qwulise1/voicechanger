@@ -7,10 +7,10 @@
 
 The current MVP already ships a working Java-layer microphone hook through LSPosed and keeps room for deeper native routing later:
 
-- microphone PCM interception via `AudioRecord.read(...)`;
+- stable safe-mode microphone PCM interception via `AudioRecord.read(...)`;
 - shared DSP profiles and routing;
 - app/module settings synchronization through a module `ContentProvider`;
-- live diagnostics, scope presets, and GitHub Actions builds.
+- live diagnostics and GitHub Actions builds.
 
 ## Modules
 
@@ -24,11 +24,11 @@ Current MVP status:
 
 - GitHub Actions build both APKs in the cloud.
 - GitHub Actions package a ready-to-download release bundle zip.
-- The module hooks Java `AudioRecord.read(...)` and `AudioRecord` lifecycle for scoped apps.
+- The module hooks Java `AudioRecord.read(...)` in safe-mode for scoped apps.
 - The companion app saves configuration into the module through a content provider.
 - Four PCM modes are available right now: Original, Robot, Bright, and Deep.
-- Optional per-app package routing is available.
-- The module keeps a live diagnostic ring buffer and now covers the Java `WebRTC` path with lifecycle tracking and a `nativeDataIsRecorded` bridge.
+- App selection is handled only by LSPosed scope.
+- The module keeps a live diagnostic ring buffer. WebRTC/lifecycle/native layers are currently isolated behind future re-enable work because Telegram-like clients crashed during startup with aggressive hooks.
 - Recommended LSPosed scope is declared in the manifest for common messaging and voice apps.
 - The companion app can fill routing from recommended packages or from recent live logs.
 
@@ -38,7 +38,7 @@ Current MVP status:
 2. Enable the module in `LSPosed`.
 3. Put target apps into the module scope.
 4. Open the companion app and save the effect config.
-5. Test voice capture while watching the diagnostics view for `AudioRecord`, `WebRTC`, or `AAudio` events.
+5. Test voice capture while watching the diagnostics view for `AudioRecord.read` events.
 
 Detailed install notes are in [docs/INSTALL.md](docs/INSTALL.md).
 

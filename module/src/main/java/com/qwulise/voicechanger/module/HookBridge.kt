@@ -19,16 +19,15 @@ object HookBridge {
     private val recentBuffers = Collections.synchronizedMap(WeakHashMap<ByteBuffer, ProcessedBufferStamp>())
 
     fun activeTargets(): List<String> = listOf(
-        "AudioRecord.read(...) Java hook",
-        "AudioRecord lifecycle metadata hooks",
+        "Safe-mode AudioRecord.read(...) Java hook",
         "ContentProvider-backed shared config",
         "Per-stream PCM state cache",
-        "Per-app target package routing",
-        "WebRTC Java lifecycle and buffer bridge",
         "Ring-buffer live logs",
     )
 
     fun plannedTargets(): List<String> = listOf(
+        "Re-enable lifecycle hooks after Telegram crash isolation",
+        "Re-enable WebRTC bridge after startup crash isolation",
         "Experimental AAudio native layer re-enable after runtime validation",
         "AAudio input callback wrapper",
         "Oboe wrapper and callback path",

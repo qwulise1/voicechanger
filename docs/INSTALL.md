@@ -11,10 +11,6 @@
    - `com.skype.raider`
 4. Reboot the target apps after changing LSPosed scope.
 5. Open `Voicechanger Companion`, pick a mode, set gain, and save the config.
-6. Use the routing buttons if needed:
-   - `Реком. пакеты` fills the recommended scope list into package routing.
-   - `Из логов` builds a routing list from apps already seen by diagnostics.
-   - `Весь scope` disables package restriction and processes every scoped app.
-7. Keep the diagnostics screen open while testing. The app refreshes hook logs automatically every few seconds.
+6. Keep the diagnostics screen open while testing. The app refreshes hook logs automatically every few seconds.
 
-The current stable path covers `AudioRecord` and Java `WebRTC`. The `AAudio/Oboe/vendor` native path is kept experimental until runtime validation on real devices, so callback and vendor-specific pipelines can still require additional hook work.
+The current stable path is safe-mode `AudioRecord.read(...)` only. WebRTC/lifecycle/native layers are intentionally held back until crash isolation is complete on Telegram-like clients.
