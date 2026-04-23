@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -89,3 +92,32 @@ jobs:
         with:
           name: voicechanger-release-bundle
           path: build/ci/voicechanger-*-release-bundle.zip
+
+      - name: Publish latest artifacts branch
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          out_dir="$(mktemp -d)"
+          cp app/build/outputs/apk/release/*.apk "$out_dir/"
+          cp module/build/outputs/apk/release/*.apk "$out_dir/"
+          cp build/ci/voicechanger-*-release-bundle.zip "$out_dir/"
+          cp build/ci/android-build.log "$out_dir/android-build.log"
+          cat > "$out_dir/README.txt" <<EOF
+          Voicechanger latest build
+          Commit: ${GITHUB_SHA}
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Install both release APKs from this folder:
+          - app release APK
+          - module release APK
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan latest-artifacts
+          git rm -rf . >/dev/null 2>&1 || true
+          cp -R "$out_dir"/. .
+          git add .
+          git commit -m "Publish latest artifacts for ${GITHUB_SHA}"
+          git push --force origin latest-artifacts
