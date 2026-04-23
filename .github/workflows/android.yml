@@ -99,8 +99,10 @@ jobs:
         run: |
           set -euo pipefail
           out_dir="$(mktemp -d)"
-          cp app/build/outputs/apk/release/*.apk "$out_dir/"
-          cp module/build/outputs/apk/release/*.apk "$out_dir/"
+          cp app/build/outputs/apk/release/*.apk "$out_dir/Voicechanger-companion-release.apk"
+          cp module/build/outputs/apk/release/*.apk "$out_dir/Voicechanger-module-release.apk"
+          cp app/build/outputs/apk/debug/*.apk "$out_dir/Voicechanger-companion-debug.apk"
+          cp module/build/outputs/apk/debug/*.apk "$out_dir/Voicechanger-module-debug.apk"
           cp build/ci/voicechanger-*-release-bundle.zip "$out_dir/"
           cp build/ci/android-build.log "$out_dir/android-build.log"
           cat > "$out_dir/README.txt" <<EOF
@@ -108,16 +110,17 @@ jobs:
           Commit: ${GITHUB_SHA}
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-          Install both release APKs from this folder:
-          - app release APK
-          - module release APK
+          Install both release APKs from this folder.
+          Release APKs are CI debug-key signed test builds:
+          - Voicechanger-companion-release.apk
+          - Voicechanger-module-release.apk
           EOF
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout --orphan latest-artifacts
-          git rm -rf . >/dev/null 2>&1 || true
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -R "$out_dir"/. .
-          git add .
+          git add -A
           git commit -m "Publish latest artifacts for ${GITHUB_SHA}"
           git push --force origin latest-artifacts
