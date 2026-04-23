@@ -20,7 +20,6 @@ object HookBridge {
 
     fun activeTargets(): List<String> = listOf(
         "Safe-mode AudioRecord.read(...) Java hook",
-        "OPlus vendor HAL parameters from target process",
         "ContentProvider-backed shared config",
         "Per-stream PCM state cache",
         "Ring-buffer live logs",
@@ -32,7 +31,6 @@ object HookBridge {
         "Experimental AAudio native layer re-enable after runtime validation",
         "AAudio input callback wrapper",
         "Oboe wrapper and callback path",
-        "Vendor-specific native capture paths",
         "Selected app-specific native pipelines",
     )
 

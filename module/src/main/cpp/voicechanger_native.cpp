@@ -285,21 +285,16 @@ float applyMicBoost(float input, int boost) {
         return std::clamp(input, -1.0f, 1.0f);
     }
 
-    float gain = 1.0f;
-    float saturationMix = 0.0f;
     if (amount >= 101.0f) {
-        gain = 76.0f;
-        saturationMix = 1.0f;
-    } else if (amount <= 10.0f) {
-        gain = (amount * 0.5f) + 1.0f;
-    } else {
-        const float normalized = (amount - 10.0f) / 90.0f;
-        saturationMix = 0.45f * normalized * normalized;
-        gain = 6.0f + (14.0f * normalized) + (4.0f * normalized * normalized);
+        const float clipped = std::clamp(input * 76.0f, -1.0f, 1.0f);
+        return (clipped >= 0.0f ? 1.0f : -1.0f) * std::pow(std::abs(clipped), 0.55f);
     }
 
+    const float normalized = amount / 100.0f;
+    const float gain = 1.0f + (3.0f * std::pow(normalized, 1.65f));
+    const float saturationMix = 0.16f * normalized * normalized * normalized;
     const float clipped = std::clamp(input * gain, -1.0f, 1.0f);
-    const float saturated = (clipped >= 0.0f ? 1.0f : -1.0f) * std::pow(std::abs(clipped), 0.55f);
+    const float saturated = (clipped >= 0.0f ? 1.0f : -1.0f) * std::pow(std::abs(clipped), 0.72f);
     return std::clamp((clipped * (1.0f - saturationMix)) + (saturated * saturationMix), -1.0f, 1.0f);
 }
 

@@ -58,20 +58,6 @@ jobs:
           path: build/ci/android-build.log
           if-no-files-found: warn
 
-      - name: Upload OPlus debug APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: voicechanger-oplus-debug
-          path: module/build/outputs/apk/oplus/debug/*.apk
-
-      - name: Upload OPlus release APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: voicechanger-oplus-release
-          path: module/build/outputs/apk/oplus/release/*.apk
-
       - name: Upload clean debug APK
         if: success()
         uses: actions/upload-artifact@v4
@@ -99,9 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           out_dir="$(mktemp -d)"
-          cp module/build/outputs/apk/oplus/release/*.apk "$out_dir/Voicechanger-oplus-release.apk"
           cp module/build/outputs/apk/clean/release/*.apk "$out_dir/Voicechanger-clean-release.apk"
-          cp module/build/outputs/apk/oplus/debug/*.apk "$out_dir/Voicechanger-oplus-debug.apk"
           cp module/build/outputs/apk/clean/debug/*.apk "$out_dir/Voicechanger-clean-debug.apk"
           cp build/ci/voicechanger-*-release-bundle.zip "$out_dir/"
           cp build/ci/android-build.log "$out_dir/android-build.log"
@@ -112,8 +96,7 @@ jobs:
 
           Install one release APK from this folder.
           Release APKs are CI debug-key signed test builds:
-          - Voicechanger-oplus-release.apk: normal package with hidden OPlus vendor layer
-          - Voicechanger-clean-release.apk: separate package without OPlus vendor layer
+          - Voicechanger-clean-release.apk: clean LSPosed module without OPlus vendor layer
           EOF
 
           git config user.name "github-actions[bot]"

@@ -46,32 +46,23 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 rateKey = "$packageName|Application.attach|injected",
                 minIntervalMs = 15_000L,
             )
-            VendorHalBridge.applyIfConfigured(
-                packageName = packageName,
-                config = ConfigClient.getConfig(),
-                reason = "Application.attach",
-                force = true,
-            )
         }
     }
 
     private fun createAudioRecordConstructorHook(packageName: String) = object : XC_MethodHook() {
         override fun afterHookedMethod(param: MethodHookParam) {
-            VendorHalBridge.applyIfConfigured(
-                packageName = packageName,
-                config = ConfigClient.getConfig(),
-                reason = "AudioRecord.<init>",
-            )
+            HookBridge.registerAudioRecord(param.thisObject as? AudioRecord ?: return, packageName)
         }
     }
 
     private fun createStartRecordingHook(packageName: String) = object : XC_MethodHook() {
         override fun beforeHookedMethod(param: MethodHookParam) {
-            VendorHalBridge.applyIfConfigured(
+            DiagnosticsClient.reportEvent(
                 packageName = packageName,
-                config = ConfigClient.getConfig(),
-                reason = "AudioRecord.startRecording",
-                force = true,
+                source = "AudioRecord.startRecording",
+                detail = "Recording started.",
+                rateKey = "$packageName|AudioRecord.startRecording",
+                minIntervalMs = 15_000L,
             )
         }
     }
@@ -93,11 +84,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
 
         val config = ConfigClient.getConfig()
-        VendorHalBridge.applyIfConfigured(
-            packageName = packageName,
-            config = config,
-            reason = "AudioRecord.read",
-        )
         if (!config.enabled) {
             DiagnosticsClient.reportEvent(
                 packageName = packageName,

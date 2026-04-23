@@ -33,7 +33,7 @@ enum class VoiceMode(
     MOUSE(
         id = "mouse",
         title = "Мышь",
-        summary = "Очень высокий мультяшный тон.",
+        summary = "Резкий мультяшный тон с явным подъемом голоса.",
         telegraphId = 7,
     ),
     MALE(
@@ -45,7 +45,7 @@ enum class VoiceMode(
     FEMALE(
         id = "female",
         title = "Женский",
-        summary = "Легкий подъем тона и верхней атаки.",
+        summary = "Более высокий и яркий тембр без ухода в ребенка.",
         telegraphId = 9,
     ),
     MONSTER(
@@ -88,6 +88,12 @@ enum class VoiceMode(
         id = "helium",
         title = "Гелий",
         summary = "Сильный подъем тона и яркости.",
+        telegraphId = 13,
+    ),
+    PURR(
+        id = "purr",
+        title = "Мур",
+        summary = "Копия гелия с тем самым вертолетным оттенком.",
         telegraphId = 13,
     ),
     HEXAFLUORIDE(
@@ -541,13 +547,14 @@ object PcmVoiceProcessor {
         VoiceMode.HOARSE -> hoarse(input, state)
         VoiceMode.CUSTOM -> customPitch(effectStrength, state)
         VoiceMode.CHILD -> brighten(pitched(1.28f, state), 0.30f, state)
-        VoiceMode.MOUSE -> brighten(pitched(1.52f, state), 0.42f, state)
+        VoiceMode.MOUSE -> brighten(sampleHold(pitched(1.92f, state), 2, state), 0.58f, state)
         VoiceMode.MALE -> darken(pitched(0.84f, state), 0.08f, 1.28f, state)
-        VoiceMode.FEMALE -> brighten(pitched(1.08f, state), 0.18f, state)
+        VoiceMode.FEMALE -> brighten(pitched(1.26f, state), 0.38f, state)
         VoiceMode.MONSTER -> darken(pitched(0.64f, state), 0.05f, 1.85f, state)
         VoiceMode.ECHO -> echo(input, 0.18f, 0.45f, 0.52f, state)
         VoiceMode.NOISE -> noise(input, state)
         VoiceMode.HELIUM -> brighten(pitched(1.42f, state), 0.36f, state)
+        VoiceMode.PURR -> brighten(pitched(1.42f, state), 0.36f, state)
         VoiceMode.HEXAFLUORIDE -> darken(pitched(0.56f, state), 0.04f, 1.95f, state)
         VoiceMode.CAVE -> cave(input, state)
     }
@@ -718,23 +725,18 @@ object PcmVoiceProcessor {
             return input.coerceIn(-1f, 1f)
         }
 
-        val gain: Float
-        val saturationMix: Float
         if (amount >= 101f) {
-            gain = 76f
-            saturationMix = 1f
-        } else if (amount <= 10f) {
-            gain = (amount * 0.5f) + 1f
-            saturationMix = 0f
-        } else {
-            val normalized = (amount - 10f) / 90f
-            saturationMix = 0.45f * normalized * normalized
-            gain = 6f + (14f * normalized) + (4f * normalized * normalized)
+            val clipped = (input * 76f).coerceIn(-1f, 1f)
+            return (if (clipped >= 0f) 1f else -1f) *
+                abs(clipped).toDouble().pow(0.55).toFloat()
         }
 
+        val normalized = amount / 100f
+        val gain = 1f + (3.0f * normalized.toDouble().pow(1.65).toFloat())
+        val saturationMix = 0.16f * normalized * normalized * normalized
         val clipped = (input * gain).coerceIn(-1f, 1f)
         val saturated = (if (clipped >= 0f) 1f else -1f) *
-            abs(clipped).toDouble().pow(0.55).toFloat()
+            abs(clipped).toDouble().pow(0.72).toFloat()
         return ((clipped * (1f - saturationMix)) + (saturated * saturationMix)).coerceIn(-1f, 1f)
     }
 

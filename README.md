@@ -2,7 +2,7 @@
 
 Root/LSPosed voice changer for Android microphone capture.
 
-The current build ships as a single installable APK. The same APK contains:
+The current build ships as one installable clean APK. The same APK contains:
 
 - LSPosed module entrypoint;
 - clean settings screen;
@@ -12,10 +12,9 @@ The current build ships as a single installable APK. The same APK contains:
 
 ## Builds
 
-- `Voicechanger-oplus-release.apk` - main package with hidden OPlus/OnePlus vendor audio parameter layer.
-- `Voicechanger-clean-release.apk` - separate package id without the vendor layer, so it does not update the main APK.
+- `Voicechanger-clean-release.apk` - clean LSPosed module without the hidden OPlus/OnePlus vendor layer.
 
-Install only the variant you want to test, enable it in LSPosed, choose target apps in LSPosed scope, then open Voicechanger and change settings. Settings save automatically.
+Install the APK, enable it in LSPosed, choose target apps in LSPosed scope, then open Voicechanger and change settings. Settings save automatically.
 
 ## Audio
 

@@ -39,7 +39,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            module/build/outputs/apk/oplus/release/*.apk
             module/build/outputs/apk/clean/release/*.apk
             build/ci/voicechanger-*-release-bundle.zip
           generate_release_notes: true

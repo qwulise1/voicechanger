@@ -14,7 +14,7 @@ Voicechanger now ships as one LSPosed APK per variant. The UI, config provider, 
 - Root bridge config fallback under `/data/local/tmp`.
 - Automatic UI save on every setting change.
 - Telegraph-style realtime DSP modes.
-- Optional hidden OPlus/OnePlus vendor parameters in the `oplus` flavor.
+- Clean-only runtime; the OPlus/OnePlus vendor parameter layer is not shipped.
 
 ## Limits
 

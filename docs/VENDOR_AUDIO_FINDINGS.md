@@ -29,6 +29,6 @@ On the test device the package feature checks are false, but the vendor properti
 
 ## Implementation Direction
 
-The `oplus` APK flavor sends the same vendor parameters from the target process through LSPosed. The UI intentionally does not expose this as a separate panel; the `clean` flavor disables it.
+The distributed APK is clean-only now, so the OPlus vendor layer is not shipped in CI artifacts. These notes are kept only as research context.
 
 This path is vendor-specific. If the HAL rejects calls from non-system packages or requires Game Assistant allowlists/cloud auth, the next layer is a root/system-service shim or Magisk-side audioserver/HAL integration instead of app-level `AudioRecord` hooks.
