@@ -2,37 +2,45 @@ package com.qwulise.voicechanger.app
 
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigFileBridge
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 object RootConfigPublisher {
     private const val SU_TIMEOUT_SECONDS = 6L
 
-    fun publishConfig(config: VoiceConfig) {
+    fun publishConfig(packageName: String, config: VoiceConfig) {
         val rawConfig = VoiceConfigFileBridge.encodeConfig(config)
+        val configPath = VoiceConfigFileBridge.configPathFor(packageName)
+        val logPath = VoiceConfigFileBridge.logPathFor(packageName)
         val script = """
             umask 000
             mkdir -p /data/local/tmp
-            cat > ${VoiceConfigFileBridge.CONFIG_PATH}
-            touch ${VoiceConfigFileBridge.LOG_PATH}
-            chmod 666 ${VoiceConfigFileBridge.CONFIG_PATH} ${VoiceConfigFileBridge.LOG_PATH}
+            tee ${configPath} ${VoiceConfigFileBridge.CONFIG_PATH} >/dev/null
+            touch ${logPath} ${VoiceConfigFileBridge.LOG_PATH}
+            chmod 666 ${configPath} ${VoiceConfigFileBridge.CONFIG_PATH} ${logPath} ${VoiceConfigFileBridge.LOG_PATH}
         """.trimIndent()
         runSu(script, rawConfig)
     }
 
-    fun clearLogs() {
+    fun clearLogs(packageName: String) {
+        val logPath = VoiceConfigFileBridge.logPathFor(packageName)
         val script = """
             umask 000
             mkdir -p /data/local/tmp
+            : > ${logPath}
             : > ${VoiceConfigFileBridge.LOG_PATH}
-            chmod 666 ${VoiceConfigFileBridge.LOG_PATH}
+            chmod 666 ${logPath} ${VoiceConfigFileBridge.LOG_PATH}
         """.trimIndent()
         runSu(script, "")
     }
 
-    fun readRootLogs() = VoiceConfigFileBridge.readEventFile()
+    fun readRootLogs(packageName: String) =
+        (VoiceConfigFileBridge.readEventFile(VoiceConfigFileBridge.logPathFor(packageName)) +
+            VoiceConfigFileBridge.readEventFile())
+            .distinctBy { "${it.timestampMs}|${it.packageName}|${it.source}|${it.detail}" }
 
-    fun readRootConfig(): VoiceConfig? = VoiceConfigFileBridge.readConfigFile()
+    fun readRootConfig(packageName: String): VoiceConfig? =
+        VoiceConfigFileBridge.readConfigFile(VoiceConfigFileBridge.configPathFor(packageName))
+            ?: VoiceConfigFileBridge.readConfigFile()
 
     private fun runSu(script: String, stdin: String) {
         val process = ProcessBuilder("su", "-c", script)
@@ -51,11 +59,6 @@ object RootConfigPublisher {
         }
     }
 
-    fun describePaths(): String = buildString {
-        append(VoiceConfigFileBridge.CONFIG_PATH)
-        append(if (File(VoiceConfigFileBridge.CONFIG_PATH).isFile) " exists" else " missing")
-        append("\n")
-        append(VoiceConfigFileBridge.LOG_PATH)
-        append(if (File(VoiceConfigFileBridge.LOG_PATH).isFile) " exists" else " missing")
-    }
+    fun appendRootLog(packageName: String, event: com.qwulise.voicechanger.core.DiagnosticEvent): Boolean =
+        VoiceConfigFileBridge.appendEventFile(event, VoiceConfigFileBridge.logPathFor(packageName))
 }

@@ -4,7 +4,6 @@ import android.os.Bundle
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
-import com.qwulise.voicechanger.core.VoiceConfigFileBridge
 import de.robv.android.xposed.XposedBridge
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -21,8 +20,8 @@ data class NativeConfigSnapshot(
             enabled = false,
             allowed = false,
             modeId = "original",
-            effectStrength = 55,
-            micGainPercent = 100,
+            effectStrength = 85,
+            micGainPercent = 0,
         )
     }
 }
@@ -99,7 +98,7 @@ object NativeAudioBridge {
         val context = resolveContext()
         runCatching {
             val delivered = if (context == null) {
-                VoiceConfigFileBridge.appendEventFile(event)
+                ModuleFileBridge.appendEvent(event)
             } else {
                 runCatching {
                     requireNotNull(context.contentResolver.call(
@@ -113,7 +112,7 @@ object NativeAudioBridge {
                             putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, now)
                         },
                     )) { "provider returned null append result" }
-                }.isSuccess || VoiceConfigFileBridge.appendEventFile(event)
+                }.isSuccess || ModuleFileBridge.appendEvent(event)
             }
             if (delivered) {
                 synchronized(lastEvents) { lastEvents[rateKey] = now }
@@ -140,7 +139,7 @@ object NativeAudioBridge {
                 return cachedConfig
             }
 
-            val rootConfig = VoiceConfigFileBridge.readConfigFile()
+            val rootConfig = ModuleFileBridge.readConfig()
             val context = resolveContext()
             if (context == null) {
                 cachedConfig = rootConfig ?: cachedConfig

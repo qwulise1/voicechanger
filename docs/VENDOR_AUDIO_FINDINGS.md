@@ -29,6 +29,6 @@ On the test device the package feature checks are false, but the vendor properti
 
 ## Implementation Direction
 
-The companion app now has an experimental OPlus HAL panel. It sends the same vendor parameters directly through `AudioManager` and logs the commands through the module provider when available.
+The `oplus` APK flavor sends the same vendor parameters from the target process through LSPosed. The UI intentionally does not expose this as a separate panel; the `clean` flavor disables it.
 
 This path is vendor-specific. If the HAL rejects calls from non-system packages or requires Game Assistant allowlists/cloud auth, the next layer is a root/system-service shim or Magisk-side audioserver/HAL integration instead of app-level `AudioRecord` hooks.

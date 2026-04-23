@@ -1,16 +1,9 @@
 # Voicechanger Install
 
-1. Install `Voicechanger Module` and `Voicechanger Companion`.
-2. Enable the module inside `LSPosed`.
-3. Add your target apps to the module scope. The recommended baseline is:
-   - `org.telegram.messenger`
-   - `com.discord`
-   - `com.whatsapp`
-   - `org.thoughtcrime.securesms`
-   - `org.signal.messenger`
-   - `com.skype.raider`
-4. Reboot the target apps after changing LSPosed scope.
-5. Open `Voicechanger Companion`, pick a mode, set gain, and save the config.
-6. Keep the diagnostics screen open while testing. The app refreshes hook logs automatically every few seconds.
+1. Install one APK: `Voicechanger-oplus-release.apk` or `Voicechanger-clean-release.apk`.
+2. Enable the installed APK as an LSPosed module.
+3. Select target apps in LSPosed scope.
+4. Fully stop and reopen target apps after scope changes.
+5. Open Voicechanger, pick a mode, set effect and mic boost. Changes save automatically.
 
-The current stable path is safe-mode `AudioRecord.read(...)` only. WebRTC/lifecycle/native layers are intentionally held back until crash isolation is complete on Telegram-like clients.
+Use `clean` if you want only the PCM hook. Use `oplus` if you also want the hidden OnePlus/OPlus vendor audio parameter attempt.

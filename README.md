@@ -1,49 +1,24 @@
 # Voicechanger
 
-`voicechanger` is a rooted Android voice-changing stack built around two deliverables:
+Root/LSPosed voice changer for Android microphone capture.
 
-1. `module` - a hook/root-facing module intended for LSPosed/Zygisk-style integration.
-2. `app` - a companion APK for configuration, profiles, diagnostics, and future per-app targeting.
+The current build ships as a single installable APK. The same APK contains:
 
-The current MVP already ships a working Java-layer microphone hook through LSPosed and keeps room for deeper native routing later:
+- LSPosed module entrypoint;
+- clean settings screen;
+- provider-backed config store;
+- root bridge fallback for target processes;
+- Java `AudioRecord.read(...)` PCM processing.
 
-- stable safe-mode microphone PCM interception via `AudioRecord.read(...)`;
-- shared DSP profiles and routing;
-- app/module settings synchronization through a module `ContentProvider`;
-- live diagnostics and GitHub Actions builds.
+## Builds
 
-## Modules
+- `Voicechanger-oplus-release.apk` - main package with hidden OPlus/OnePlus vendor audio parameter layer.
+- `Voicechanger-clean-release.apk` - separate package id without the vendor layer, so it does not update the main APK.
 
-- `app` - companion application with live controls for enable/mode/strength/gain.
-- `module` - LSPosed module with an active `AudioRecord` interception layer and provider-backed config store.
-- `core:dsp` - shared Kotlin core for effect metadata, config contracts, and reusable PCM processors.
+Install only the variant you want to test, enable it in LSPosed, choose target apps in LSPosed scope, then open Voicechanger and change settings. Settings save automatically.
 
-## Current Status
+## Audio
 
-Current MVP status:
+The DSP mode list follows the Telegraph/ExteraGram plugin direction: child, mouse, male, female, monster, robot, alien, hoarse, echo, noise, helium, hexafluoride, cave, speed, and custom modulation.
 
-- GitHub Actions build both APKs in the cloud.
-- GitHub Actions package a ready-to-download release bundle zip.
-- The module hooks Java `AudioRecord.read(...)` in safe-mode for scoped apps.
-- The companion app saves configuration into the module through a content provider.
-- Four PCM modes are available right now: Original, Robot, Bright, and Deep.
-- App selection is handled only by LSPosed scope.
-- The module keeps a live diagnostic ring buffer. WebRTC/lifecycle/native layers are currently isolated behind future re-enable work because Telegram-like clients crashed during startup with aggressive hooks.
-- Recommended LSPosed scope is declared in the manifest for common messaging and voice apps.
-- The companion app can fill routing from recommended packages or from recent live logs.
-
-## Install Flow
-
-1. Install both APKs: module and companion.
-2. Enable the module in `LSPosed`.
-3. Put target apps into the module scope.
-4. Open the companion app and save the effect config.
-5. Test voice capture while watching the diagnostics view for `AudioRecord.read` events.
-
-Detailed install notes are in [docs/INSTALL.md](docs/INSTALL.md).
-
-## Next Steps
-
-1. Re-enable and validate the experimental `AAudio` layer on real devices, then extend into callback `AAudio`, `Oboe`, and vendor-native paths.
-2. Replace the current lightweight timbre effects with deeper pitch/formant DSP.
-3. Validate the native hook chain on more real devices and app-specific audio pipelines.
+Mic boost is `0..101`. `0` is default/off; `101` is the hard limiter/saturation mode.

@@ -41,7 +41,7 @@ jobs:
           java -version
           gradle --version
 
-      - name: Build companion and module APKs
+      - name: Build module APK variants
         shell: bash
         run: ./ci/build-android.sh
 
@@ -58,33 +58,33 @@ jobs:
           path: build/ci/android-build.log
           if-no-files-found: warn
 
-      - name: Upload companion APK
+      - name: Upload OPlus debug APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: voicechanger-companion-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: voicechanger-oplus-debug
+          path: module/build/outputs/apk/oplus/debug/*.apk
 
-      - name: Upload companion release APK
+      - name: Upload OPlus release APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: voicechanger-companion-release
-          path: app/build/outputs/apk/release/*.apk
+          name: voicechanger-oplus-release
+          path: module/build/outputs/apk/oplus/release/*.apk
 
-      - name: Upload module APK
+      - name: Upload clean debug APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: voicechanger-module-debug
-          path: module/build/outputs/apk/debug/*.apk
+          name: voicechanger-clean-debug
+          path: module/build/outputs/apk/clean/debug/*.apk
 
-      - name: Upload module release APK
+      - name: Upload clean release APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: voicechanger-module-release
-          path: module/build/outputs/apk/release/*.apk
+          name: voicechanger-clean-release
+          path: module/build/outputs/apk/clean/release/*.apk
 
       - name: Upload release bundle
         if: success()
@@ -99,10 +99,10 @@ jobs:
         run: |
           set -euo pipefail
           out_dir="$(mktemp -d)"
-          cp app/build/outputs/apk/release/*.apk "$out_dir/Voicechanger-companion-release.apk"
-          cp module/build/outputs/apk/release/*.apk "$out_dir/Voicechanger-module-release.apk"
-          cp app/build/outputs/apk/debug/*.apk "$out_dir/Voicechanger-companion-debug.apk"
-          cp module/build/outputs/apk/debug/*.apk "$out_dir/Voicechanger-module-debug.apk"
+          cp module/build/outputs/apk/oplus/release/*.apk "$out_dir/Voicechanger-oplus-release.apk"
+          cp module/build/outputs/apk/clean/release/*.apk "$out_dir/Voicechanger-clean-release.apk"
+          cp module/build/outputs/apk/oplus/debug/*.apk "$out_dir/Voicechanger-oplus-debug.apk"
+          cp module/build/outputs/apk/clean/debug/*.apk "$out_dir/Voicechanger-clean-debug.apk"
           cp build/ci/voicechanger-*-release-bundle.zip "$out_dir/"
           cp build/ci/android-build.log "$out_dir/android-build.log"
           cat > "$out_dir/README.txt" <<EOF
@@ -110,10 +110,10 @@ jobs:
           Commit: ${GITHUB_SHA}
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
-          Install both release APKs from this folder.
+          Install one release APK from this folder.
           Release APKs are CI debug-key signed test builds:
-          - Voicechanger-companion-release.apk
-          - Voicechanger-module-release.apk
+          - Voicechanger-oplus-release.apk: normal package with hidden OPlus vendor layer
+          - Voicechanger-clean-release.apk: separate package without OPlus vendor layer
           EOF
 
           git config user.name "github-actions[bot]"

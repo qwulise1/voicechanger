@@ -9,6 +9,12 @@ object VoiceConfigFileBridge {
     const val CONFIG_PATH = "/data/local/tmp/voicechanger-config.properties"
     const val LOG_PATH = "/data/local/tmp/voicechanger-events.log"
 
+    fun configPathFor(packageName: String): String =
+        "/data/local/tmp/voicechanger-${safeName(packageName)}.properties"
+
+    fun logPathFor(packageName: String): String =
+        "/data/local/tmp/voicechanger-${safeName(packageName)}.events.log"
+
     fun encodeConfig(config: VoiceConfig): String {
         val sanitized = config.sanitized()
         val properties = Properties().apply {
@@ -34,8 +40,8 @@ object VoiceConfigFileBridge {
         return VoiceConfig(
             enabled = properties.boolean(VoiceConfigContract.KEY_ENABLED, false),
             modeId = properties.getProperty(VoiceConfigContract.KEY_MODE_ID) ?: VoiceMode.default.id,
-            effectStrength = properties.int(VoiceConfigContract.KEY_EFFECT_STRENGTH, 55),
-            micGainPercent = properties.int(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 100),
+            effectStrength = properties.int(VoiceConfigContract.KEY_EFFECT_STRENGTH, 85),
+            micGainPercent = properties.int(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 0),
             restrictToTargets = properties.boolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false),
             targetPackages = properties.getProperty(VoiceConfigContract.KEY_TARGET_PACKAGES)
                 ?.split(',')
@@ -50,9 +56,9 @@ object VoiceConfigFileBridge {
         ).sanitized()
     }
 
-    fun readConfigFile(): VoiceConfig? =
+    fun readConfigFile(path: String = CONFIG_PATH): VoiceConfig? =
         runCatching {
-            val file = File(CONFIG_PATH)
+            val file = File(path)
             if (!file.isFile) {
                 null
             } else {
@@ -60,9 +66,9 @@ object VoiceConfigFileBridge {
             }
         }.getOrNull()
 
-    fun readEventFile(): List<DiagnosticEvent> =
+    fun readEventFile(path: String = LOG_PATH): List<DiagnosticEvent> =
         runCatching {
-            val file = File(LOG_PATH)
+            val file = File(path)
             if (!file.isFile) {
                 emptyList()
             } else {
@@ -70,10 +76,15 @@ object VoiceConfigFileBridge {
             }
         }.getOrDefault(emptyList())
 
-    fun appendEventFile(event: DiagnosticEvent): Boolean =
+    fun appendEventFile(event: DiagnosticEvent, path: String = LOG_PATH): Boolean =
         runCatching {
-            File(LOG_PATH).appendText(event.encode() + "\n")
+            File(path).appendText(event.encode() + "\n")
         }.isSuccess
+
+    private fun safeName(packageName: String): String =
+        packageName.ifBlank { "default" }
+            .map { if (it.isLetterOrDigit() || it == '.' || it == '_') it else '_' }
+            .joinToString("")
 
     private fun Properties.boolean(key: String, default: Boolean): Boolean =
         getProperty(key)?.equals("true", ignoreCase = true) ?: default

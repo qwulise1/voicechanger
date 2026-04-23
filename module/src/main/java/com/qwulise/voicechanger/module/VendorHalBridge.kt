@@ -22,6 +22,9 @@ object VendorHalBridge {
         reason: String,
         force: Boolean = false,
     ) {
+        if (BuildConfig.APPLICATION_ID.contains(".clean")) {
+            return
+        }
         if (!config.vendorHalEnabled) {
             return
         }

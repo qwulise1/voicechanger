@@ -8,13 +8,17 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Voicechanger.Module">
         <activity
-            android:name=".ModuleEntryActivity"
+            android:name="com.qwulise.voicechanger.app.MainActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ModuleEntryActivity"
+            android:exported="false" />
 
         <meta-data
             android:name="xposedmodule"
@@ -31,7 +35,7 @@
 
         <provider
             android:name=".VoiceConfigProvider"
-            android:authorities="com.qwulise.voicechanger.module.config"
+            android:authorities="${applicationId}.config"
             android:exported="true" />
     </application>
 

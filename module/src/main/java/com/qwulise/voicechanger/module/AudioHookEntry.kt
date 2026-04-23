@@ -7,7 +7,6 @@ import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
-import com.qwulise.voicechanger.core.VoiceConfigFileBridge
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -43,7 +42,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
             DiagnosticsClient.reportEvent(
                 packageName = packageName,
                 source = "Application.attach",
-                detail = "LSPosed module injected. process=${android.os.Process.myPid()} rootConfig=${VoiceConfigFileBridge.readConfigFile() != null}",
+                detail = "LSPosed module injected. process=${android.os.Process.myPid()} rootConfig=${ModuleFileBridge.readConfig() != null}",
                 rateKey = "$packageName|Application.attach|injected",
                 minIntervalMs = 15_000L,
             )
@@ -178,7 +177,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
         DiagnosticsClient.reportEvent(
             packageName = packageName,
             source = "AudioRecord.read",
-            detail = "Processed read=$readCount rate=${sampleRate}Hz mode=${config.mode.id} gain=${config.micGainPercent}% ${session.describe()}",
+            detail = "Processed read=$readCount rate=${sampleRate}Hz mode=${config.mode.id} boost=${config.micGainPercent} ${session.describe()}",
             rateKey = "$packageName|AudioRecord.read|processed",
             minIntervalMs = 12_000L,
         )
@@ -205,7 +204,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                     return cachedConfig
                 }
 
-                val rootConfig = VoiceConfigFileBridge.readConfigFile()
+                val rootConfig = ModuleFileBridge.readConfig()
                 val context = ProcessContextResolver.resolve()
                 if (context == null) {
                     cachedConfig = rootConfig ?: cachedConfig
@@ -258,7 +257,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 )
                 val context = ProcessContextResolver.resolve()
                 val delivered = if (context == null) {
-                    VoiceConfigFileBridge.appendEventFile(event)
+                    ModuleFileBridge.appendEvent(event)
                 } else {
                     runCatching {
                         requireNotNull(context.contentResolver.call(
@@ -272,7 +271,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                                 putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, now)
                             },
                         )) { "provider returned null append result" }
-                    }.isSuccess || VoiceConfigFileBridge.appendEventFile(event)
+                    }.isSuccess || ModuleFileBridge.appendEvent(event)
                 }
                 if (delivered) {
                     synchronized(lastEvents) { lastEvents[rateKey] = now }

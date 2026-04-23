@@ -6,33 +6,113 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import kotlin.math.tanh
 
 enum class VoiceMode(
     val id: String,
     val title: String,
     val summary: String,
+    val telegraphId: Int,
 ) {
     ORIGINAL(
         id = "original",
         title = "Оригинал",
-        summary = "Без тембрального эффекта, только общее усиление микрофона.",
+        summary = "Без тембрального эффекта, только усиление микрофона.",
+        telegraphId = 0,
+    ),
+    CHILD(
+        id = "child",
+        title = "Детский",
+        summary = "Высокий яркий голос без металлической окраски.",
+        telegraphId = 6,
+    ),
+    MOUSE(
+        id = "mouse",
+        title = "Мышь",
+        summary = "Очень высокий мультяшный тон.",
+        telegraphId = 7,
+    ),
+    MALE(
+        id = "male",
+        title = "Мужской",
+        summary = "Ниже и плотнее, без роботизации.",
+        telegraphId = 8,
+    ),
+    FEMALE(
+        id = "female",
+        title = "Женский",
+        summary = "Легкий подъем тона и верхней атаки.",
+        telegraphId = 9,
+    ),
+    MONSTER(
+        id = "monster",
+        title = "Монстр",
+        summary = "Сильно сниженный тембр с плотным низом.",
+        telegraphId = 10,
     ),
     ROBOT(
         id = "robot",
         title = "Робот",
         summary = "Металлическая модуляция с грубым цифровым оттенком.",
+        telegraphId = 2,
     ),
-    BRIGHT(
-        id = "bright",
-        title = "Яркий",
-        summary = "Более светлый, резкий и высокий по восприятию тембр.",
+    ALIEN(
+        id = "alien",
+        title = "Пришелец",
+        summary = "Высокий голос с нестабильной модуляцией.",
+        telegraphId = 3,
     ),
-    DEEP(
-        id = "deep",
-        title = "Глубокий",
-        summary = "Более плотный и низкий по восприятию тембр.",
+    HOARSE(
+        id = "hoarse",
+        title = "Хриплый",
+        summary = "Грязная верхняя атака и шероховатость.",
+        telegraphId = 4,
+    ),
+    ECHO(
+        id = "echo",
+        title = "Эхо",
+        summary = "Короткий повтор поверх голоса.",
+        telegraphId = 11,
+    ),
+    NOISE(
+        id = "noise",
+        title = "Шум",
+        summary = "Шумовая примесь с высокочастотной фильтрацией.",
+        telegraphId = 12,
+    ),
+    HELIUM(
+        id = "helium",
+        title = "Гелий",
+        summary = "Сильный подъем тона и яркости.",
+        telegraphId = 13,
+    ),
+    HEXAFLUORIDE(
+        id = "hexafluoride",
+        title = "Гексафторид",
+        summary = "Очень низкий тяжелый голос.",
+        telegraphId = 14,
+    ),
+    CAVE(
+        id = "cave",
+        title = "Пещера",
+        summary = "Объемная задержка и темный хвост.",
+        telegraphId = 15,
+    ),
+    SPEED(
+        id = "speed",
+        title = "Ускорение",
+        summary = "Небольшой подъем тона и темпа восприятия.",
+        telegraphId = 1,
+    ),
+    CUSTOM(
+        id = "custom",
+        title = "Своя модуляция",
+        summary = "Слайдер эффекта задает тон от -12 до +12 полутонов.",
+        telegraphId = 5,
     ),
     ;
 
@@ -40,7 +120,11 @@ enum class VoiceMode(
         val default: VoiceMode = ORIGINAL
 
         fun fromId(id: String?): VoiceMode =
-            entries.firstOrNull { it.id == id } ?: default
+            when (id) {
+                "bright" -> HELIUM
+                "deep" -> MALE
+                else -> entries.firstOrNull { it.id == id } ?: default
+            }
     }
 }
 
@@ -59,8 +143,8 @@ object VoiceProfileCatalog {
 data class VoiceConfig(
     val enabled: Boolean = false,
     val modeId: String = VoiceMode.default.id,
-    val effectStrength: Int = 55,
-    val micGainPercent: Int = 100,
+    val effectStrength: Int = 85,
+    val micGainPercent: Int = 0,
     val restrictToTargets: Boolean = false,
     val targetPackages: Set<String> = emptySet(),
     val vendorHalEnabled: Boolean = false,
@@ -72,7 +156,7 @@ data class VoiceConfig(
 
     fun sanitized(): VoiceConfig = copy(
         effectStrength = effectStrength.coerceIn(0, 100),
-        micGainPercent = micGainPercent.coerceIn(0, 200),
+        micGainPercent = micGainPercent.coerceIn(0, 101),
         targetPackages = targetPackages
             .map { it.trim() }
             .filter { it.isNotEmpty() }
@@ -85,7 +169,7 @@ data class VoiceConfig(
         putBoolean(VoiceConfigContract.KEY_ENABLED, enabled)
         putString(VoiceConfigContract.KEY_MODE_ID, mode.id)
         putInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, effectStrength.coerceIn(0, 100))
-        putInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, micGainPercent.coerceIn(0, 200))
+        putInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, micGainPercent.coerceIn(0, 101))
         putBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, restrictToTargets)
         putStringArrayList(
             VoiceConfigContract.KEY_TARGET_PACKAGES,
@@ -104,8 +188,8 @@ data class VoiceConfig(
             VoiceConfig(
                 enabled = bundle?.getBoolean(VoiceConfigContract.KEY_ENABLED, false) ?: false,
                 modeId = bundle?.getString(VoiceConfigContract.KEY_MODE_ID) ?: VoiceMode.default.id,
-                effectStrength = bundle?.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 55) ?: 55,
-                micGainPercent = bundle?.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 100) ?: 100,
+                effectStrength = bundle?.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 85) ?: 85,
+                micGainPercent = bundle?.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 0) ?: 0,
                 restrictToTargets = bundle?.getBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false) ?: false,
                 targetPackages = bundle?.getStringArrayList(VoiceConfigContract.KEY_TARGET_PACKAGES)?.toSet() ?: emptySet(),
                 vendorHalEnabled = bundle?.getBoolean(VoiceConfigContract.KEY_VENDOR_HAL_ENABLED, false) ?: false,
@@ -226,10 +310,81 @@ object VoiceConfigContract {
 
 class VoiceProcessingState {
     var phase: Double = 0.0
+    var phase2: Double = 0.0
     var lowPass: Float = 0f
+    var lowPass2: Float = 0f
     var previousInput: Float = 0f
+    var hpPrevInput: Float = 0f
+    var hpPrevOutput: Float = 0f
     var wasPositive: Boolean = false
     var subPolarity: Float = 1f
+    var sampleHoldCounter: Int = 0
+    var sampleHoldValue: Float = 0f
+    var delayPos: Int = 0
+    var readInitialized: Boolean = false
+    var readPos: Float = 0f
+    var xfadeOldPos: Float = 0f
+    var xfadeRemaining: Int = 0
+    var written: Long = 0L
+    var sampleRate: Int = 0
+    var lastModeId: String = ""
+    var noiseState: Int = 324508639
+    var ring: FloatArray = FloatArray(DEFAULT_RING_SIZE)
+    var delay: FloatArray = FloatArray(DEFAULT_DELAY_SIZE)
+
+    fun prepare(rate: Int, mode: VoiceMode) {
+        val safeRate = rate.coerceAtLeast(8_000)
+        if (sampleRate != safeRate) {
+            sampleRate = safeRate
+            ring = FloatArray(nextPowerOfTwo(max(DEFAULT_RING_SIZE, safeRate * 2)))
+            delay = FloatArray(max(DEFAULT_DELAY_SIZE, safeRate))
+            resetModeState(mode)
+            written = 0L
+            return
+        }
+        if (lastModeId != mode.id) {
+            resetModeState(mode)
+        }
+    }
+
+    fun writeRing(sample: Float) {
+        ring[written.toInt() and (ring.size - 1)] = sample
+        written++
+    }
+
+    private fun resetModeState(mode: VoiceMode) {
+        phase = 0.0
+        phase2 = 0.0
+        lowPass = 0f
+        lowPass2 = 0f
+        previousInput = 0f
+        hpPrevInput = 0f
+        hpPrevOutput = 0f
+        wasPositive = false
+        subPolarity = 1f
+        sampleHoldCounter = 0
+        sampleHoldValue = 0f
+        delayPos = 0
+        readInitialized = false
+        readPos = 0f
+        xfadeOldPos = 0f
+        xfadeRemaining = 0
+        delay.fill(0f)
+        lastModeId = mode.id
+    }
+
+    companion object {
+        private const val DEFAULT_RING_SIZE = 65_536
+        private const val DEFAULT_DELAY_SIZE = 48_000
+
+        private fun nextPowerOfTwo(value: Int): Int {
+            var result = 1
+            while (result < value) {
+                result = result shl 1
+            }
+            return result
+        }
+    }
 }
 
 object PcmVoiceProcessor {
@@ -357,69 +512,236 @@ object PcmVoiceProcessor {
         config: VoiceConfig,
         state: VoiceProcessingState,
     ): Float {
-        val strength = config.effectStrength.coerceIn(0, 100) / 100f
         val rate = sampleRate.coerceAtLeast(8_000)
-        val effected = when (config.mode) {
-            VoiceMode.ORIGINAL -> input
-            VoiceMode.ROBOT -> applyRobot(input, rate, strength, state)
-            VoiceMode.BRIGHT -> applyBright(input, strength, state)
-            VoiceMode.DEEP -> applyDeep(input, strength, state)
+        val mode = config.mode
+        val strength = config.effectStrength.coerceIn(0, 100) / 100f
+        state.prepare(rate, mode)
+        state.writeRing(input)
+
+        val wet = if (mode == VoiceMode.CUSTOM) 1f else strength.coerceIn(0f, 1f)
+        val effected = if (mode == VoiceMode.ORIGINAL) {
+            input
+        } else {
+            processTelegraphMode(input, mode, config.effectStrength, state)
         }
-        val gained = effected * (config.micGainPercent.coerceIn(0, 200) / 100f)
-        return softClip(gained)
+        val mixed = (input * (1f - wet)) + (effected * wet)
+        return applyMicBoost(mixed, config.micGainPercent)
     }
 
-    private fun applyRobot(
+    private fun processTelegraphMode(
         input: Float,
-        sampleRate: Int,
-        strength: Float,
+        mode: VoiceMode,
+        effectStrength: Int,
         state: VoiceProcessingState,
-    ): Float {
-        val carrierHz = 55f + strength * 125f
-        val carrier = if (sin(state.phase) >= 0.0) 1f else -1f
-        state.phase += (2.0 * PI * carrierHz / sampleRate)
-        if (state.phase >= 2.0 * PI) {
+    ): Float = when (mode) {
+        VoiceMode.ORIGINAL -> input
+        VoiceMode.SPEED -> brighten(pitched(1.12f, state), 0.24f, state)
+        VoiceMode.ROBOT -> robot(input, state)
+        VoiceMode.ALIEN -> alien(state)
+        VoiceMode.HOARSE -> hoarse(input, state)
+        VoiceMode.CUSTOM -> customPitch(effectStrength, state)
+        VoiceMode.CHILD -> brighten(pitched(1.28f, state), 0.30f, state)
+        VoiceMode.MOUSE -> brighten(pitched(1.52f, state), 0.42f, state)
+        VoiceMode.MALE -> darken(pitched(0.84f, state), 0.08f, 1.28f, state)
+        VoiceMode.FEMALE -> brighten(pitched(1.08f, state), 0.18f, state)
+        VoiceMode.MONSTER -> darken(pitched(0.64f, state), 0.05f, 1.85f, state)
+        VoiceMode.ECHO -> echo(input, 0.18f, 0.45f, 0.52f, state)
+        VoiceMode.NOISE -> noise(input, state)
+        VoiceMode.HELIUM -> brighten(pitched(1.42f, state), 0.36f, state)
+        VoiceMode.HEXAFLUORIDE -> darken(pitched(0.56f, state), 0.04f, 1.95f, state)
+        VoiceMode.CAVE -> cave(input, state)
+    }
+
+    private fun customPitch(effectStrength: Int, state: VoiceProcessingState): Float {
+        val semitones = ((effectStrength.coerceIn(0, 100) - 50) / 50f) * 12f
+        val ratio = 2.0.pow((semitones / 12f).toDouble()).toFloat()
+        val shifted = pitched(ratio, state)
+        return if (ratio >= 1f) {
+            brighten(shifted, 0.22f, state)
+        } else {
+            darken(shifted, 0.08f, 1.18f, state)
+        }
+    }
+
+    private fun robot(input: Float, state: VoiceProcessingState): Float =
+        softClip(quantize(input * ((osc1(78f, state) * 0.65f) + 0.35f), 24f) * 1.35f)
+
+    private fun alien(state: VoiceProcessingState): Float =
+        softClip(
+            sampleHold(
+                pitched(1.22f, state) *
+                    ((((osc1(33f, state) * 0.6f) + (osc2(91f, state) * 0.4f)) * 0.55f) + 0.45f),
+                3,
+                state,
+            ) * 1.25f,
+        )
+
+    private fun hoarse(input: Float, state: VoiceProcessingState): Float =
+        softClip(highPass(input + (nextNoise(state) * 0.1f * abs(0.08f + input)), 0.986f, state) * 1.7f)
+
+    private fun noise(input: Float, state: VoiceProcessingState): Float =
+        softClip(highPass(input + (nextNoise(state) * 0.18f), 0.972f, state) * 1.16f)
+
+    private fun cave(input: Float, state: VoiceProcessingState): Float {
+        val delay1 = readDelay((state.sampleRate * 0.11f).toInt(), state)
+        val delay2 = readDelay((state.sampleRate * 0.23f).toInt(), state)
+        val delay3 = readDelay((state.sampleRate * 0.41f).toInt(), state)
+        val mid = delay2 * 0.22f
+        writeDelay(softClip(input + (delay1 * 0.42f) + mid), state)
+        return softClip((input * 0.7f) + (delay1 * 0.38f) + mid + (delay3 * 0.14f))
+    }
+
+    private fun echo(input: Float, seconds: Float, feedback: Float, mix: Float, state: VoiceProcessingState): Float {
+        val delayed = readDelay((state.sampleRate * seconds).toInt(), state)
+        writeDelay(softClip(input + (delayed * feedback)), state)
+        return softClip(input + (delayed * mix))
+    }
+
+    private fun pitched(ratio: Float, state: VoiceProcessingState): Float {
+        if (ratio <= 0f || state.written <= 2L) {
+            return 0f
+        }
+        if (!state.readInitialized) {
+            state.readPos = state.written.toFloat() - (state.sampleRate * 0.06f)
+            state.readInitialized = true
+        }
+        val minReadable = state.written.toFloat() - state.ring.size + 32f
+        val maxReadable = max(state.written.toFloat() - 16f, minReadable)
+        if (state.readPos < minReadable) {
+            state.readPos = minReadable
+        }
+
+        var sample = sampleAt(state.readPos, state)
+        if (state.xfadeRemaining > 0) {
+            val oldSample = sampleAt(state.xfadeOldPos, state)
+            val blend = (XFADE_SAMPLES - state.xfadeRemaining) / XFADE_SAMPLES.toFloat()
+            sample = (sample * blend) + (oldSample * (1f - blend))
+            state.xfadeOldPos += ratio
+            state.xfadeRemaining--
+        }
+
+        state.readPos += ratio
+        if (state.readPos > maxReadable) {
+            startCrossfade(maxReadable - (state.sampleRate * 0.035f), state)
+        } else if (state.readPos < minReadable) {
+            startCrossfade(minReadable + (state.sampleRate * 0.02f), state)
+        }
+        return sample
+    }
+
+    private fun startCrossfade(newReadPos: Float, state: VoiceProcessingState) {
+        state.xfadeOldPos = state.readPos
+        state.readPos = newReadPos
+        state.xfadeRemaining = XFADE_SAMPLES
+    }
+
+    private fun sampleAt(position: Float, state: VoiceProcessingState): Float {
+        val base = position.toInt()
+        val fraction = position - base
+        val mask = state.ring.size - 1
+        val first = state.ring[base and mask]
+        val second = state.ring[(base + 1) and mask]
+        return first + ((second - first) * fraction)
+    }
+
+    private fun brighten(input: Float, amount: Float, state: VoiceProcessingState): Float =
+        softClip((input * (1f - amount)) + (highPass(input, 0.975f, state) * amount * 1.8f))
+
+    private fun darken(input: Float, alpha: Float, gain: Float, state: VoiceProcessingState): Float =
+        softClip(lowPass(input, alpha, state) * gain)
+
+    private fun lowPass(input: Float, alpha: Float, state: VoiceProcessingState): Float {
+        state.lowPass += alpha * (input - state.lowPass)
+        return state.lowPass
+    }
+
+    private fun highPass(input: Float, coefficient: Float, state: VoiceProcessingState): Float {
+        val output = coefficient * ((state.hpPrevOutput + input) - state.hpPrevInput)
+        state.hpPrevOutput = output
+        state.hpPrevInput = input
+        return output
+    }
+
+    private fun sampleHold(input: Float, samples: Int, state: VoiceProcessingState): Float {
+        if (state.sampleHoldCounter <= 0) {
+            state.sampleHoldCounter = samples
+            state.sampleHoldValue = input
+        } else {
+            state.sampleHoldCounter--
+        }
+        return state.sampleHoldValue
+    }
+
+    private fun quantize(input: Float, steps: Float): Float =
+        (input * steps).roundToInt() / steps
+
+    private fun osc1(hz: Float, state: VoiceProcessingState): Float {
+        state.phase += (hz * 2.0 * PI) / state.sampleRate
+        if (state.phase > 2.0 * PI) {
             state.phase -= 2.0 * PI
         }
-
-        val crushResolution = 14f + strength * 50f
-        val crushed = (input * crushResolution).roundToInt() / crushResolution
-        return softClip(input * 0.18f + crushed * carrier * (0.82f + strength * 0.1f))
+        return sin(state.phase).toFloat()
     }
 
-    private fun applyBright(
-        input: Float,
-        strength: Float,
-        state: VoiceProcessingState,
-    ): Float {
-        val emphasis = input - (state.previousInput * (0.72f + strength * 0.18f))
-        state.previousInput = input
-        val sharpened = input * (0.65f - strength * 0.10f) + emphasis * (1.15f + strength * 0.95f)
-        return softClip(sharpened * (1.02f + strength * 0.25f))
-    }
-
-    private fun applyDeep(
-        input: Float,
-        strength: Float,
-        state: VoiceProcessingState,
-    ): Float {
-        val alpha = 0.10f - strength * 0.05f
-        state.lowPass += (input - state.lowPass) * alpha.coerceIn(0.03f, 0.12f)
-
-        val positive = input >= 0f
-        if (positive && !state.wasPositive) {
-            state.subPolarity *= -1f
+    private fun osc2(hz: Float, state: VoiceProcessingState): Float {
+        state.phase2 += (hz * 2.0 * PI) / state.sampleRate
+        if (state.phase2 > 2.0 * PI) {
+            state.phase2 -= 2.0 * PI
         }
-        state.wasPositive = positive
-
-        val sub = state.lowPass * state.subPolarity * (0.18f + strength * 0.35f)
-        return softClip(state.lowPass * (1.04f + strength * 0.26f) + sub)
+        return sin(state.phase2).toFloat()
     }
 
-    private fun softClip(value: Float): Float {
-        val limited = value / (1f + abs(value) * 0.85f)
-        return limited.coerceIn(-1f, 1f)
+    private fun nextNoise(state: VoiceProcessingState): Float {
+        val step1 = state.noiseState xor (state.noiseState shl 13)
+        val step2 = step1 xor (step1 ushr 17)
+        state.noiseState = step2 xor (step2 shl 5)
+        return ((state.noiseState and Int.MAX_VALUE) / 1_073_741_800f) - 1f
     }
+
+    private fun readDelay(samples: Int, state: VoiceProcessingState): Float {
+        val delaySamples = samples.coerceIn(1, state.delay.size - 1)
+        var index = state.delayPos - delaySamples
+        while (index < 0) {
+            index += state.delay.size
+        }
+        return state.delay[index % state.delay.size]
+    }
+
+    private fun writeDelay(input: Float, state: VoiceProcessingState) {
+        state.delay[state.delayPos] = input
+        state.delayPos = (state.delayPos + 1) % state.delay.size
+    }
+
+    private fun applyMicBoost(input: Float, boost: Int): Float {
+        val amount = boost.coerceIn(0, 101).toFloat()
+        if (amount <= 0f) {
+            return input.coerceIn(-1f, 1f)
+        }
+
+        val gain: Float
+        val saturationMix: Float
+        if (amount >= 101f) {
+            gain = 76f
+            saturationMix = 1f
+        } else if (amount <= 10f) {
+            gain = (amount * 0.5f) + 1f
+            saturationMix = 0f
+        } else {
+            val normalized = (amount - 10f) / 90f
+            saturationMix = 0.45f * normalized * normalized
+            gain = 6f + (14f * normalized) + (4f * normalized * normalized)
+        }
+
+        val clipped = (input * gain).coerceIn(-1f, 1f)
+        val saturated = (if (clipped >= 0f) 1f else -1f) *
+            abs(clipped).toDouble().pow(0.55).toFloat()
+        return ((clipped * (1f - saturationMix)) + (saturated * saturationMix)).coerceIn(-1f, 1f)
+    }
+
+    private fun softClip(value: Float): Float =
+        tanh(value.toDouble()).toFloat().coerceIn(-1f, 1f)
+
+    private const val XFADE_SAMPLES = 128
 
     private fun ensureScratch(requiredSize: Int) {
         if (requiredSize <= floatBuffer.size) {

@@ -38,8 +38,8 @@ struct NativeConfigSnapshot {
     bool enabled = false;
     bool allowed = false;
     std::string modeId = "original";
-    int effectStrength = 55;
-    int micGainPercent = 100;
+    int effectStrength = 85;
+    int micGainPercent = 0;
     int64_t loadedAtMs = 0;
     bool valid = false;
 };
@@ -279,6 +279,30 @@ float applyDeep(float input, float strength, StreamState &state) {
     return softClip(state.lowPass * (1.04f + strength * 0.26f) + sub);
 }
 
+float applyMicBoost(float input, int boost) {
+    const float amount = std::clamp(static_cast<float>(boost), 0.0f, 101.0f);
+    if (amount <= 0.0f) {
+        return std::clamp(input, -1.0f, 1.0f);
+    }
+
+    float gain = 1.0f;
+    float saturationMix = 0.0f;
+    if (amount >= 101.0f) {
+        gain = 76.0f;
+        saturationMix = 1.0f;
+    } else if (amount <= 10.0f) {
+        gain = (amount * 0.5f) + 1.0f;
+    } else {
+        const float normalized = (amount - 10.0f) / 90.0f;
+        saturationMix = 0.45f * normalized * normalized;
+        gain = 6.0f + (14.0f * normalized) + (4.0f * normalized * normalized);
+    }
+
+    const float clipped = std::clamp(input * gain, -1.0f, 1.0f);
+    const float saturated = (clipped >= 0.0f ? 1.0f : -1.0f) * std::pow(std::abs(clipped), 0.55f);
+    return std::clamp((clipped * (1.0f - saturationMix)) + (saturated * saturationMix), -1.0f, 1.0f);
+}
+
 float processSample(float input, int sampleRate, const NativeConfigSnapshot &config, StreamState &state) {
     const float strength = std::clamp(static_cast<float>(config.effectStrength), 0.0f, 100.0f) / 100.0f;
     const int safeSampleRate = sampleRate < 8000 ? 8000 : sampleRate;
@@ -292,8 +316,7 @@ float processSample(float input, int sampleRate, const NativeConfigSnapshot &con
         effected = applyDeep(input, strength, state);
     }
 
-    const float gained = effected * (std::clamp(config.micGainPercent, 0, 200) / 100.0f);
-    return softClip(gained);
+    return applyMicBoost(effected, config.micGainPercent);
 }
 
 void processInt16(int16_t *samples, int32_t sampleCount, int sampleRate, const NativeConfigSnapshot &config, StreamState &state) {

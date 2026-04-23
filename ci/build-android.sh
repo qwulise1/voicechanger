@@ -15,10 +15,10 @@ echo "Log file: ${LOG_FILE}"
 
 set +e
 "${GRADLE_CMD}" --no-daemon --console=plain --stacktrace \
-  :app:assembleDebug \
-  :app:assembleRelease \
-  :module:assembleDebug \
-  :module:assembleRelease \
+  :module:assembleOplusDebug \
+  :module:assembleOplusRelease \
+  :module:assembleCleanDebug \
+  :module:assembleCleanRelease \
   2>&1 | tee "${LOG_FILE}"
 status=${PIPESTATUS[0]}
 set -e

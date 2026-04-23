@@ -12,8 +12,8 @@ android {
         applicationId = "com.qwulise.voicechanger.module"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -23,6 +23,17 @@ android {
             cmake {
                 cppFlags += listOf("-std=c++20", "-fvisibility=hidden")
             }
+        }
+    }
+
+    flavorDimensions += "vendor"
+    productFlavors {
+        create("oplus") {
+            dimension = "vendor"
+        }
+        create("clean") {
+            dimension = "vendor"
+            applicationIdSuffix = ".clean"
         }
     }
 
@@ -50,10 +61,20 @@ android {
         jvmTarget = "17"
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
             version = "3.22.1"
+        }
+    }
+
+    sourceSets {
+        getByName("main") {
+            java.srcDir("../app/src/main/java")
         }
     }
 }

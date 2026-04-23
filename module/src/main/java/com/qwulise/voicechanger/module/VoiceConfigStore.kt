@@ -11,8 +11,8 @@ class VoiceConfigStore(context: Context) {
         enabled = preferences.getBoolean(VoiceConfigContract.KEY_ENABLED, false),
         modeId = preferences.getString(VoiceConfigContract.KEY_MODE_ID, null)
             ?: VoiceConfig().modeId,
-        effectStrength = preferences.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 55),
-        micGainPercent = preferences.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 100),
+        effectStrength = preferences.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 85),
+        micGainPercent = preferences.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 0),
         restrictToTargets = preferences.getBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false),
         targetPackages = preferences.getStringSet(VoiceConfigContract.KEY_TARGET_PACKAGES, emptySet()) ?: emptySet(),
         vendorHalEnabled = preferences.getBoolean(VoiceConfigContract.KEY_VENDOR_HAL_ENABLED, false),

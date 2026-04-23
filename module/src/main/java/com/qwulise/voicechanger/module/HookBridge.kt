@@ -134,12 +134,8 @@ object HookBridge {
         return packageName in config.targetPackages
     }
 
-    fun shouldHookPackage(packageName: String): Boolean = packageName !in setOf(
-        "android",
-        "com.android.systemui",
-        "com.qwulise.voicechanger.app",
-        "com.qwulise.voicechanger.module",
-    )
+    fun shouldHookPackage(packageName: String): Boolean =
+        packageName != "android" && !packageName.startsWith("com.qwulise.voicechanger")
 
     private fun invokeInt(target: Any, methodName: String): Int? =
         runCatching { target.javaClass.getMethod(methodName).invoke(target) as? Int }.getOrNull()
