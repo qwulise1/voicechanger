@@ -40,7 +40,7 @@ object VoiceConfigFileBridge {
         return VoiceConfig(
             enabled = properties.boolean(VoiceConfigContract.KEY_ENABLED, false),
             modeId = properties.getProperty(VoiceConfigContract.KEY_MODE_ID) ?: VoiceMode.default.id,
-            effectStrength = properties.int(VoiceConfigContract.KEY_EFFECT_STRENGTH, 100),
+            effectStrength = properties.int(VoiceConfigContract.KEY_EFFECT_STRENGTH, 85),
             micGainPercent = properties.int(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 0),
             restrictToTargets = properties.boolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false),
             targetPackages = properties.getProperty(VoiceConfigContract.KEY_TARGET_PACKAGES)

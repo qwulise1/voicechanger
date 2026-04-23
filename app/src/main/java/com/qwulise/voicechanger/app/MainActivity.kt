@@ -77,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         boostValue = body("")
         effectSlider = GlassSlider(this).apply {
             max = 100
-            progress = 100
+            progress = 85
             setColors(palette.accent, palette.sliderTrack, palette.sliderThumb)
             onProgressChange = { onConfigChanged() }
         }

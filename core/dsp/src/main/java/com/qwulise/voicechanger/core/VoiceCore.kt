@@ -6,7 +6,6 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -150,7 +149,7 @@ object VoiceProfileCatalog {
 data class VoiceConfig(
     val enabled: Boolean = false,
     val modeId: String = VoiceMode.default.id,
-    val effectStrength: Int = 100,
+    val effectStrength: Int = 85,
     val micGainPercent: Int = 0,
     val restrictToTargets: Boolean = false,
     val targetPackages: Set<String> = emptySet(),
@@ -195,7 +194,7 @@ data class VoiceConfig(
             VoiceConfig(
                 enabled = bundle?.getBoolean(VoiceConfigContract.KEY_ENABLED, false) ?: false,
                 modeId = bundle?.getString(VoiceConfigContract.KEY_MODE_ID) ?: VoiceMode.default.id,
-                effectStrength = bundle?.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 100) ?: 100,
+                effectStrength = bundle?.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 85) ?: 85,
                 micGainPercent = bundle?.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 0) ?: 0,
                 restrictToTargets = bundle?.getBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false) ?: false,
                 targetPackages = bundle?.getStringArrayList(VoiceConfigContract.KEY_TARGET_PACKAGES)?.toSet() ?: emptySet(),
@@ -332,7 +331,6 @@ class VoiceProcessingState {
     var readPos: Float = 0f
     var xfadeOldPos: Float = 0f
     var xfadeRemaining: Int = 0
-    var pitchPhase: Float = 0f
     var written: Long = 0L
     var sampleRate: Int = 0
     var lastModeId: String = ""
@@ -377,7 +375,6 @@ class VoiceProcessingState {
         readPos = 0f
         xfadeOldPos = 0f
         xfadeRemaining = 0
-        pitchPhase = 0f
         delay.fill(0f)
         lastModeId = mode.id
     }
@@ -527,7 +524,7 @@ object PcmVoiceProcessor {
         state.prepare(rate, mode)
         state.writeRing(input)
 
-        val wet = if (mode == VoiceMode.CUSTOM) 1f else strength.coerceIn(0f, 1f)
+        val wet = if (mode == VoiceMode.CUSTOM || mode == VoiceMode.PURR) 1f else strength.coerceIn(0f, 1f)
         val effected = if (mode == VoiceMode.ORIGINAL) {
             input
         } else {
@@ -544,28 +541,28 @@ object PcmVoiceProcessor {
         state: VoiceProcessingState,
     ): Float = when (mode) {
         VoiceMode.ORIGINAL -> input
-        VoiceMode.SPEED -> brighten(transposeSemitones(2f, state), 0.10f, state)
+        VoiceMode.SPEED -> brighten(pitched(1.12f, state), 0.24f, state)
         VoiceMode.ROBOT -> robot(input, state)
         VoiceMode.ALIEN -> alien(state)
         VoiceMode.HOARSE -> hoarse(input, state)
         VoiceMode.CUSTOM -> customPitch(effectStrength, state)
-        VoiceMode.CHILD -> brighten(transposeSemitones(9f, state), 0.16f, state)
-        VoiceMode.MOUSE -> brighten(transposeSemitones(11f, state), 0.22f, state)
-        VoiceMode.MALE -> darken(transposeSemitones(-3f, state), 0.09f, 1.18f, state)
-        VoiceMode.FEMALE -> brighten(transposeSemitones(3f, state), 0.12f, state)
-        VoiceMode.MONSTER -> darken(transposeSemitones(-8f, state), 0.06f, 1.42f, state)
+        VoiceMode.CHILD -> brighten(pitched(1.28f, state), 0.30f, state)
+        VoiceMode.MOUSE -> brighten(pitched(1.52f, state), 0.42f, state)
+        VoiceMode.MALE -> darken(pitched(0.84f, state), 0.08f, 1.28f, state)
+        VoiceMode.FEMALE -> brighten(pitched(1.08f, state), 0.18f, state)
+        VoiceMode.MONSTER -> darken(pitched(0.64f, state), 0.05f, 1.85f, state)
         VoiceMode.ECHO -> echo(input, 0.18f, 0.45f, 0.52f, state)
         VoiceMode.NOISE -> noise(input, state)
-        VoiceMode.HELIUM -> brighten(transposeSemitones(12f, state), 0.24f, state)
-        VoiceMode.PURR -> brighten(legacyPitched(1.42f, state), 0.36f, state)
-        VoiceMode.HEXAFLUORIDE -> darken(transposeSemitones(-5f, state), 0.06f, 1.36f, state)
+        VoiceMode.HELIUM -> brighten(pitched(1.42f, state), 0.26f, state)
+        VoiceMode.PURR -> brighten(pitched(1.42f, state), 0.36f, state)
+        VoiceMode.HEXAFLUORIDE -> darken(pitched(0.56f, state), 0.04f, 1.95f, state)
         VoiceMode.CAVE -> cave(input, state)
     }
 
     private fun customPitch(effectStrength: Int, state: VoiceProcessingState): Float {
         val semitones = ((effectStrength.coerceIn(0, 100) - 50) / 50f) * 12f
         val ratio = 2.0.pow((semitones / 12f).toDouble()).toFloat()
-        val shifted = granularPitched(ratio, state)
+        val shifted = pitched(ratio, state)
         return if (ratio >= 1f) {
             brighten(shifted, 0.22f, state)
         } else {
@@ -579,7 +576,7 @@ object PcmVoiceProcessor {
     private fun alien(state: VoiceProcessingState): Float =
         softClip(
             sampleHold(
-                legacyPitched(1.22f, state) *
+                pitched(1.22f, state) *
                     ((((osc1(33f, state) * 0.6f) + (osc2(91f, state) * 0.4f)) * 0.55f) + 0.45f),
                 3,
                 state,
@@ -607,48 +604,7 @@ object PcmVoiceProcessor {
         return softClip(input + (delayed * mix))
     }
 
-    private fun transposeSemitones(semitones: Float, state: VoiceProcessingState): Float =
-        granularPitched(2.0.pow((semitones / 12f).toDouble()).toFloat(), state)
-
-    private fun granularPitched(ratio: Float, state: VoiceProcessingState): Float {
-        if (ratio <= 0f) {
-            return 0f
-        }
-        if (abs(ratio - 1f) < 0.015f) {
-            return sampleAt((state.written - 1).toFloat(), state)
-        }
-
-        val grain = (state.sampleRate * 0.045f).coerceIn(360f, state.ring.size / 4f)
-        val minDelay = (state.sampleRate * 0.018f).coerceAtLeast(96f)
-        val maxDelay = minDelay + grain
-        if (state.written.toFloat() < maxDelay + 4f) {
-            return sampleAt((state.written - 1).toFloat(), state)
-        }
-
-        val phaseStep = (abs(ratio - 1f) / grain).coerceAtLeast(0.00001f)
-        state.pitchPhase = (state.pitchPhase + phaseStep) % 1f
-
-        fun readGrain(phase: Float): Float {
-            val delay = if (ratio >= 1f) {
-                maxDelay - (phase * grain)
-            } else {
-                minDelay + (phase * grain)
-            }
-            return sampleAt(state.written.toFloat() - delay, state)
-        }
-
-        val phaseA = state.pitchPhase
-        val phaseB = (phaseA + 0.5f) % 1f
-        val weightA = raisedSine(phaseA)
-        val weightB = raisedSine(phaseB)
-        val total = (weightA + weightB).coerceAtLeast(0.0001f)
-        return ((readGrain(phaseA) * weightA) + (readGrain(phaseB) * weightB)) / total
-    }
-
-    private fun raisedSine(phase: Float): Float =
-        (0.5 - (0.5 * cos(phase * 2.0 * PI))).toFloat().coerceIn(0f, 1f)
-
-    private fun legacyPitched(ratio: Float, state: VoiceProcessingState): Float {
+    private fun pitched(ratio: Float, state: VoiceProcessingState): Float {
         if (ratio <= 0f || state.written <= 2L) {
             return 0f
         }

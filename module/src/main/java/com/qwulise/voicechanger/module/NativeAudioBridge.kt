@@ -20,7 +20,7 @@ data class NativeConfigSnapshot(
             enabled = false,
             allowed = false,
             modeId = "original",
-            effectStrength = 100,
+            effectStrength = 85,
             micGainPercent = 0,
         )
     }

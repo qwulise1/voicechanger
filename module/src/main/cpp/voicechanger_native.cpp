@@ -38,7 +38,7 @@ struct NativeConfigSnapshot {
     bool enabled = false;
     bool allowed = false;
     std::string modeId = "original";
-    int effectStrength = 100;
+    int effectStrength = 85;
     int micGainPercent = 0;
     int64_t loadedAtMs = 0;
     bool valid = false;
