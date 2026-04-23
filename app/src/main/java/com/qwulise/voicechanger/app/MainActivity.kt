@@ -36,15 +36,12 @@ import java.util.Date
 class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var moduleInfoText: TextView
-    private lateinit var scopeText: TextView
     private lateinit var enabledSwitch: SwitchMaterial
-    private lateinit var restrictSwitch: SwitchMaterial
     private lateinit var modeSpinner: Spinner
     private lateinit var effectValue: TextView
     private lateinit var effectSeek: SeekBar
     private lateinit var gainValue: TextView
     private lateinit var gainSeek: SeekBar
-    private lateinit var packagesInput: EditText
     private lateinit var logsText: TextView
     private lateinit var palette: UiPalette
 
@@ -81,20 +78,9 @@ class MainActivity : AppCompatActivity() {
 
         statusText = body("")
         moduleInfoText = monoBody("")
-        scopeText = monoBody("")
         enabledSwitch = SwitchMaterial(this).apply {
             text = "Включить обработку"
             setOnCheckedChangeListener { _, _ ->
-                if (!suppressUiCallbacks) {
-                    updateStatusPreview()
-                }
-            }
-        }
-        restrictSwitch = SwitchMaterial(this).apply {
-            text = "Только выбранные пакеты"
-            setOnCheckedChangeListener { _, isChecked ->
-                packagesInput.isEnabled = isChecked
-                packagesInput.alpha = if (isChecked) 1f else 0.55f
                 if (!suppressUiCallbacks) {
                     updateStatusPreview()
                 }
@@ -110,16 +96,6 @@ class MainActivity : AppCompatActivity() {
         gainSeek = SeekBar(this).apply {
             max = 200
             setOnSeekBarChangeListener(simpleSeekListener { updateStatusPreview() })
-        }
-        packagesInput = EditText(this).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or
-                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
-                InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-            minLines = 4
-            gravity = Gravity.TOP or Gravity.START
-            hint = "org.telegram.messenger\ncom.discord\ncom.whatsapp"
-            background = fieldBackground()
-            setPadding(dp(12), dp(12), dp(12), dp(12))
         }
         logsText = monoBody("Логи еще не загружены.")
 
@@ -157,26 +133,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         panel(
-            title = "LSPosed Scope",
-            subtitle = "Это список, который стоит включить в scope модуля в LSPosed. Я вывожу его и здесь, и в метаданных модуля для самого менеджера.",
-        ).also { panel ->
-            panel.addView(scopeText)
-            column.addView(panel)
-        }
-
-        panel(
-            title = "Маршрутизация",
-            subtitle = "Если ограничение выключено, модуль обрабатывает все поддерживаемые приложения в пределах LSPosed scope. Если включено, обработка идет только по списку ниже.",
-        ).also { panel ->
-            panel.addView(restrictSwitch)
-            panel.addView(space(10))
-            panel.addView(packagesInput)
-            panel.addView(space(12))
-            panel.addView(routingActionRow())
-            column.addView(panel)
-        }
-
-        panel(
             title = "Диагностика",
             subtitle = "Лог нужен, чтобы быстро понять, какой слой сработал: AudioRecord или WebRTC. Он обновляется сам, без logcat.",
         ).also { panel ->
@@ -190,7 +146,6 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
 
         bindModeSpinner()
-        renderScopeHint(ModuleConfigClient.recommendedScope())
         reloadFromModule(showToast = false)
     }
 
@@ -254,45 +209,6 @@ class MainActivity : AppCompatActivity() {
                 refreshAvailability()
                 toast("Не удалось сбросить настройки. ${failureHint()}")
             }
-        })
-    }
-
-    private fun routingActionRow(): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.START
-
-        addView(actionButton("Реком. scope") {
-            val packages = currentModuleInfo?.recommendedScopes.orEmpty()
-                .ifEmpty { ModuleConfigClient.recommendedScope() }
-            applyPackagePreset(packages)
-            toast("Подставлен рекомендуемый LSPosed scope.")
-        })
-
-        addView(actionButton("Из логов") {
-            val packages = lastLogs
-                .map { it.packageName }
-                .filter { it.isNotBlank() }
-                .filterNot {
-                    it == packageName || it == "com.qwulise.voicechanger.module" || it == "com.qwulise.voicechanger.app"
-                }
-                .distinct()
-                .sorted()
-            if (packages.isEmpty()) {
-                toast("В логах пока нет пакетов для подстановки.")
-                return@actionButton
-            }
-            applyPackagePreset(packages)
-            toast("Список пакетов собран из последних логов.")
-        })
-
-        addView(actionButton("Весь scope") {
-            suppressUiCallbacks = true
-            restrictSwitch.isChecked = false
-            packagesInput.isEnabled = false
-            packagesInput.alpha = 0.55f
-            suppressUiCallbacks = false
-            updateStatusPreview()
-            toast("Ограничение по пакетам отключено.")
         })
     }
 
@@ -402,10 +318,6 @@ class MainActivity : AppCompatActivity() {
     private fun applyConfigToUi(config: VoiceConfig) {
         suppressUiCallbacks = true
         enabledSwitch.isChecked = config.enabled
-        restrictSwitch.isChecked = config.restrictToTargets
-        packagesInput.isEnabled = config.restrictToTargets
-        packagesInput.alpha = if (config.restrictToTargets) 1f else 0.55f
-        packagesInput.setText(config.targetPackages.joinToString("\n"))
         modeSpinner.setSelection(modeItems.indexOf(config.mode).coerceAtLeast(0), false)
         effectSeek.progress = config.effectStrength
         gainSeek.progress = config.micGainPercent
@@ -419,17 +331,12 @@ class MainActivity : AppCompatActivity() {
         modeId = modeItems.getOrElse(modeSpinner.selectedItemPosition) { VoiceMode.default }.id,
         effectStrength = effectSeek.progress,
         micGainPercent = gainSeek.progress,
-        restrictToTargets = restrictSwitch.isChecked,
-        targetPackages = packagesInput.text.toString()
-            .split("\n", ",", ";", " ")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .toSet(),
+        restrictToTargets = false,
+        targetPackages = emptySet(),
     ).sanitized()
 
     private fun renderModuleInfo(info: ModuleInfo?) {
         currentModuleInfo = info
-        renderScopeHint(info?.recommendedScopes ?: ModuleConfigClient.recommendedScope())
         moduleInfoText.text = if (info == null) {
             buildString {
                 append("Модуль пока не ответил.\n")
@@ -447,18 +354,6 @@ class MainActivity : AppCompatActivity() {
         updateStatusPreview()
     }
 
-    private fun renderScopeHint(packages: List<String>) {
-        val normalized = packages
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
-
-        scopeText.text = buildString {
-            append("Включи в LSPosed вот это:\n")
-            append(normalized.joinToString("\n") { "• $it" })
-        }
-    }
-
     private fun renderValueLabels() {
         effectValue.text = "Сейчас: ${effectSeek.progress}%"
         gainValue.text = "Сейчас: ${gainSeek.progress}%"
@@ -474,22 +369,6 @@ class MainActivity : AppCompatActivity() {
                 "[$time] ${event.packageName}\n${event.source}\n${event.detail}"
             }
         }
-    }
-
-    private fun applyPackagePreset(packages: List<String>) {
-        val normalized = packages
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinct()
-            .sorted()
-
-        suppressUiCallbacks = true
-        restrictSwitch.isChecked = true
-        packagesInput.isEnabled = true
-        packagesInput.alpha = 1f
-        packagesInput.setText(normalized.joinToString("\n"))
-        suppressUiCallbacks = false
-        updateStatusPreview()
     }
 
     private fun refreshAvailability() {
@@ -519,11 +398,7 @@ class MainActivity : AppCompatActivity() {
             )
             append("\n")
             append(
-                if (config.restrictToTargets) {
-                    "Пакетное ограничение включено: ${config.targetPackages.size} шт."
-                } else {
-                    "Обработка идет по всему выбранному LSPosed scope."
-                },
+                "Выбор приложений теперь идет только через LSPosed scope.",
             )
         }
     }
@@ -648,13 +523,6 @@ class MainActivity : AppCompatActivity() {
         setTypeface(Typeface.MONOSPACE)
     }
 
-    private fun fieldBackground() = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
-        cornerRadius = dp(12).toFloat()
-        setColor(palette.fieldBackground)
-        setStroke(dp(1), palette.fieldStroke)
-    }
-
     private fun space(valueDp: Int): View = View(this).apply {
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -680,8 +548,6 @@ class MainActivity : AppCompatActivity() {
         val titleText: Int,
         val primaryText: Int,
         val secondaryText: Int,
-        val fieldBackground: Int,
-        val fieldStroke: Int,
         val buttonBackground: Int,
         val buttonText: Int,
     )
@@ -696,8 +562,6 @@ class MainActivity : AppCompatActivity() {
                 titleText = Color.parseColor("#E6EEF5"),
                 primaryText = Color.parseColor("#D5DEE7"),
                 secondaryText = Color.parseColor("#93A4B5"),
-                fieldBackground = Color.parseColor("#0F1720"),
-                fieldStroke = Color.parseColor("#2A3A49"),
                 buttonBackground = Color.parseColor("#2D7FF9"),
                 buttonText = Color.WHITE,
             )
@@ -709,8 +573,6 @@ class MainActivity : AppCompatActivity() {
                 titleText = Color.parseColor("#102A43"),
                 primaryText = Color.parseColor("#243B53"),
                 secondaryText = Color.parseColor("#52606D"),
-                fieldBackground = Color.parseColor("#FFFFFF"),
-                fieldStroke = Color.parseColor("#BCCCDC"),
                 buttonBackground = Color.parseColor("#103B5A"),
                 buttonText = Color.WHITE,
             )
