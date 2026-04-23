@@ -14,9 +14,10 @@ object RootConfigPublisher {
         val script = """
             umask 000
             mkdir -p /data/local/tmp
-            tee ${configPath} ${VoiceConfigFileBridge.CONFIG_PATH} >/dev/null
-            touch ${logPath} ${VoiceConfigFileBridge.LOG_PATH}
-            chmod 666 ${configPath} ${VoiceConfigFileBridge.CONFIG_PATH} ${logPath} ${VoiceConfigFileBridge.LOG_PATH}
+            cat > ${configPath}
+            touch ${logPath}
+            rm -f ${VoiceConfigFileBridge.CONFIG_PATH}
+            chmod 666 ${configPath} ${logPath}
         """.trimIndent()
         runSu(script, rawConfig)
     }
@@ -27,20 +28,16 @@ object RootConfigPublisher {
             umask 000
             mkdir -p /data/local/tmp
             : > ${logPath}
-            : > ${VoiceConfigFileBridge.LOG_PATH}
-            chmod 666 ${logPath} ${VoiceConfigFileBridge.LOG_PATH}
+            chmod 666 ${logPath}
         """.trimIndent()
         runSu(script, "")
     }
 
     fun readRootLogs(packageName: String) =
-        (VoiceConfigFileBridge.readEventFile(VoiceConfigFileBridge.logPathFor(packageName)) +
-            VoiceConfigFileBridge.readEventFile())
-            .distinctBy { "${it.timestampMs}|${it.packageName}|${it.source}|${it.detail}" }
+        VoiceConfigFileBridge.readEventFile(VoiceConfigFileBridge.logPathFor(packageName))
 
     fun readRootConfig(packageName: String): VoiceConfig? =
         VoiceConfigFileBridge.readConfigFile(VoiceConfigFileBridge.configPathFor(packageName))
-            ?: VoiceConfigFileBridge.readConfigFile()
 
     private fun runSu(script: String, stdin: String) {
         val process = ProcessBuilder("su", "-c", script)

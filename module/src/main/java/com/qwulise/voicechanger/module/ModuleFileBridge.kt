@@ -9,9 +9,8 @@ object ModuleFileBridge {
     private val logPath: String = VoiceConfigFileBridge.logPathFor(BuildConfig.APPLICATION_ID)
 
     fun readConfig(): VoiceConfig? =
-        VoiceConfigFileBridge.readConfigFile(configPath) ?: VoiceConfigFileBridge.readConfigFile()
+        VoiceConfigFileBridge.readConfigFile(configPath)
 
     fun appendEvent(event: DiagnosticEvent): Boolean =
-        VoiceConfigFileBridge.appendEventFile(event, logPath) ||
-            VoiceConfigFileBridge.appendEventFile(event)
+        VoiceConfigFileBridge.appendEventFile(event, logPath)
 }
