@@ -15,6 +15,10 @@ class VoiceConfigStore(context: Context) {
         micGainPercent = preferences.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 100),
         restrictToTargets = preferences.getBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false),
         targetPackages = preferences.getStringSet(VoiceConfigContract.KEY_TARGET_PACKAGES, emptySet()) ?: emptySet(),
+        vendorHalEnabled = preferences.getBoolean(VoiceConfigContract.KEY_VENDOR_HAL_ENABLED, false),
+        vendorHalParam = preferences.getString(VoiceConfigContract.KEY_VENDOR_HAL_PARAM, null)
+            ?: VoiceConfig.DEFAULT_VENDOR_HAL_PARAM,
+        vendorHalLoopback = preferences.getBoolean(VoiceConfigContract.KEY_VENDOR_HAL_LOOPBACK, false),
     ).sanitized()
 
     fun write(config: VoiceConfig): VoiceConfig {
@@ -26,6 +30,9 @@ class VoiceConfigStore(context: Context) {
             .putInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, sanitized.micGainPercent)
             .putBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, sanitized.restrictToTargets)
             .putStringSet(VoiceConfigContract.KEY_TARGET_PACKAGES, sanitized.targetPackages)
+            .putBoolean(VoiceConfigContract.KEY_VENDOR_HAL_ENABLED, sanitized.vendorHalEnabled)
+            .putString(VoiceConfigContract.KEY_VENDOR_HAL_PARAM, sanitized.vendorHalParam)
+            .putBoolean(VoiceConfigContract.KEY_VENDOR_HAL_LOOPBACK, sanitized.vendorHalLoopback)
             .apply()
         return sanitized
     }

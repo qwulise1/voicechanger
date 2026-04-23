@@ -20,6 +20,7 @@ object HookBridge {
 
     fun activeTargets(): List<String> = listOf(
         "Safe-mode AudioRecord.read(...) Java hook",
+        "OPlus vendor HAL parameters from target process",
         "ContentProvider-backed shared config",
         "Per-stream PCM state cache",
         "Ring-buffer live logs",

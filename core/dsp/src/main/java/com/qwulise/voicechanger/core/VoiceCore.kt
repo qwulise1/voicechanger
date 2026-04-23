@@ -63,6 +63,9 @@ data class VoiceConfig(
     val micGainPercent: Int = 100,
     val restrictToTargets: Boolean = false,
     val targetPackages: Set<String> = emptySet(),
+    val vendorHalEnabled: Boolean = false,
+    val vendorHalParam: String = DEFAULT_VENDOR_HAL_PARAM,
+    val vendorHalLoopback: Boolean = false,
 ) {
     val mode: VoiceMode
         get() = VoiceMode.fromId(modeId)
@@ -75,6 +78,7 @@ data class VoiceConfig(
             .filter { it.isNotEmpty() }
             .toSortedSet(),
         modeId = mode.id,
+        vendorHalParam = vendorHalParam.trim(),
     )
 
     fun toBundle(): Bundle = Bundle().apply {
@@ -87,9 +91,15 @@ data class VoiceConfig(
             VoiceConfigContract.KEY_TARGET_PACKAGES,
             ArrayList(targetPackages.map { it.trim() }.filter { it.isNotEmpty() }.sorted()),
         )
+        putBoolean(VoiceConfigContract.KEY_VENDOR_HAL_ENABLED, vendorHalEnabled)
+        putString(VoiceConfigContract.KEY_VENDOR_HAL_PARAM, vendorHalParam.trim())
+        putBoolean(VoiceConfigContract.KEY_VENDOR_HAL_LOOPBACK, vendorHalLoopback)
     }
 
     companion object {
+        const val DEFAULT_VENDOR_HAL_PARAM =
+            "HTz5CcMNnLwx0cokMdR3tGT0F7Eh4=c0xwLnNMcC5zCGxKR8UEvAhLwx0cuA"
+
         fun fromBundle(bundle: Bundle?): VoiceConfig =
             VoiceConfig(
                 enabled = bundle?.getBoolean(VoiceConfigContract.KEY_ENABLED, false) ?: false,
@@ -98,6 +108,9 @@ data class VoiceConfig(
                 micGainPercent = bundle?.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 100) ?: 100,
                 restrictToTargets = bundle?.getBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false) ?: false,
                 targetPackages = bundle?.getStringArrayList(VoiceConfigContract.KEY_TARGET_PACKAGES)?.toSet() ?: emptySet(),
+                vendorHalEnabled = bundle?.getBoolean(VoiceConfigContract.KEY_VENDOR_HAL_ENABLED, false) ?: false,
+                vendorHalParam = bundle?.getString(VoiceConfigContract.KEY_VENDOR_HAL_PARAM) ?: DEFAULT_VENDOR_HAL_PARAM,
+                vendorHalLoopback = bundle?.getBoolean(VoiceConfigContract.KEY_VENDOR_HAL_LOOPBACK, false) ?: false,
             ).sanitized()
     }
 }
@@ -196,6 +209,9 @@ object VoiceConfigContract {
     const val KEY_MIC_GAIN_PERCENT = "mic_gain_percent"
     const val KEY_RESTRICT_TO_TARGETS = "restrict_to_targets"
     const val KEY_TARGET_PACKAGES = "target_packages"
+    const val KEY_VENDOR_HAL_ENABLED = "vendor_hal_enabled"
+    const val KEY_VENDOR_HAL_PARAM = "vendor_hal_param"
+    const val KEY_VENDOR_HAL_LOOPBACK = "vendor_hal_loopback"
     const val KEY_LOG_LINES = "log_lines"
     const val KEY_LOG_PACKAGE_NAME = "log_package_name"
     const val KEY_LOG_SOURCE = "log_source"

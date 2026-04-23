@@ -73,72 +73,102 @@ object ModuleConfigClient {
     )
 
     fun load(context: Context): VoiceConfig =
-        VoiceConfig.fromBundle(
-            context.contentResolver.call(
-                VoiceConfigContract.CONTENT_URI,
-                VoiceConfigContract.METHOD_GET_CONFIG,
-                null,
-                null,
-            ),
-        )
+        runCatching {
+            VoiceConfig.fromBundle(
+                requireNotNull(context.contentResolver.call(
+                    VoiceConfigContract.CONTENT_URI,
+                    VoiceConfigContract.METHOD_GET_CONFIG,
+                    null,
+                    null,
+                )) { "provider returned null config" },
+            )
+        }.getOrElse {
+            RootConfigPublisher.readRootConfig() ?: throw it
+        }
 
-    fun save(context: Context, config: VoiceConfig): VoiceConfig =
-        VoiceConfig.fromBundle(
-            context.contentResolver.call(
-                VoiceConfigContract.CONTENT_URI,
-                VoiceConfigContract.METHOD_PUT_CONFIG,
-                null,
-                config.sanitized().toBundle(),
-            ),
-        )
+    fun save(context: Context, config: VoiceConfig): VoiceConfig {
+        val sanitized = config.sanitized()
+        val providerResult = runCatching {
+            VoiceConfig.fromBundle(
+                requireNotNull(context.contentResolver.call(
+                    VoiceConfigContract.CONTENT_URI,
+                    VoiceConfigContract.METHOD_PUT_CONFIG,
+                    null,
+                    sanitized.toBundle(),
+                )) { "provider returned null after save" },
+            )
+        }
+        val rootResult = runCatching {
+            RootConfigPublisher.publishConfig(providerResult.getOrNull() ?: sanitized)
+        }
+        rootResult.getOrThrow()
+        return providerResult.getOrElse { sanitized }
+    }
 
-    fun reset(context: Context): VoiceConfig =
-        VoiceConfig.fromBundle(
-            context.contentResolver.call(
-                VoiceConfigContract.CONTENT_URI,
-                VoiceConfigContract.METHOD_RESET_CONFIG,
-                null,
-                null,
-            ),
-        )
+    fun reset(context: Context): VoiceConfig {
+        val providerResult = runCatching {
+            VoiceConfig.fromBundle(
+                requireNotNull(context.contentResolver.call(
+                    VoiceConfigContract.CONTENT_URI,
+                    VoiceConfigContract.METHOD_RESET_CONFIG,
+                    null,
+                    null,
+                )) { "provider returned null after reset" },
+            )
+        }
+        val resetConfig = providerResult.getOrNull() ?: VoiceConfig()
+        RootConfigPublisher.publishConfig(resetConfig)
+        return resetConfig
+    }
 
     fun loadModuleInfo(context: Context): ModuleInfo =
         ModuleInfo.fromBundle(
-            context.contentResolver.call(
+            requireNotNull(context.contentResolver.call(
                 VoiceConfigContract.CONTENT_URI,
                 VoiceConfigContract.METHOD_GET_MODULE_INFO,
                 null,
                 null,
-            ),
+            )) { "provider returned null module info" },
         )
 
-    fun loadLogs(context: Context): List<DiagnosticEvent> =
-        context.contentResolver.call(
-            VoiceConfigContract.CONTENT_URI,
-            VoiceConfigContract.METHOD_GET_LOGS,
-            null,
-            null,
-        )?.getStringArrayList(VoiceConfigContract.KEY_LOG_LINES)
-            ?.mapNotNull(DiagnosticEvent::decode)
-            ?.sortedByDescending { it.timestampMs }
-            ?: emptyList()
+    fun loadLogs(context: Context): List<DiagnosticEvent> {
+        val providerLogs = runCatching {
+            context.contentResolver.call(
+                VoiceConfigContract.CONTENT_URI,
+                VoiceConfigContract.METHOD_GET_LOGS,
+                null,
+                null,
+            )?.getStringArrayList(VoiceConfigContract.KEY_LOG_LINES)
+                ?.mapNotNull(DiagnosticEvent::decode)
+                ?: emptyList()
+        }.getOrDefault(emptyList())
+        return (providerLogs + RootConfigPublisher.readRootLogs())
+            .distinctBy { "${it.timestampMs}|${it.packageName}|${it.source}|${it.detail}" }
+            .sortedByDescending { it.timestampMs }
+    }
 
     fun clearLogs(context: Context) {
-        context.contentResolver.call(
-            VoiceConfigContract.CONTENT_URI,
-            VoiceConfigContract.METHOD_CLEAR_LOGS,
-            null,
-            null,
-        )
+        runCatching {
+            context.contentResolver.call(
+                VoiceConfigContract.CONTENT_URI,
+                VoiceConfigContract.METHOD_CLEAR_LOGS,
+                null,
+                null,
+            )
+        }
+        RootConfigPublisher.clearLogs()
     }
 
     fun appendLog(context: Context, event: DiagnosticEvent) {
-        context.contentResolver.call(
-            VoiceConfigContract.CONTENT_URI,
-            VoiceConfigContract.METHOD_APPEND_LOG,
-            null,
-            event.toBundle(),
-        )
+        runCatching {
+            context.contentResolver.call(
+                VoiceConfigContract.CONTENT_URI,
+                VoiceConfigContract.METHOD_APPEND_LOG,
+                null,
+                event.toBundle(),
+            )
+        }
+        com.qwulise.voicechanger.core.VoiceConfigFileBridge.appendEventFile(event)
     }
 
     private fun isPackageInstalled(packageManager: android.content.pm.PackageManager, packageName: String): Boolean =

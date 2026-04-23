@@ -3,6 +3,7 @@ package com.qwulise.voicechanger.app
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import com.qwulise.voicechanger.core.VoiceConfig
 
 data class VendorAudioStatus(
     val hasOplusMagicVoiceFeature: Boolean,
@@ -31,8 +32,7 @@ data class VendorAudioStatus(
 
 object VendorAudioController {
     const val DEFAULT_TARGET_PACKAGE = "org.telegram.messenger.beta"
-    const val DEFAULT_OPLUS_ELECTRIC_PARAM =
-        "HTz5CcMNnLwx0cokMdR3tGT0F7Eh4=c0xwLnNMcC5zCGxKR8UEvAhLwx0cuA"
+    const val DEFAULT_OPLUS_ELECTRIC_PARAM = VoiceConfig.DEFAULT_VENDOR_HAL_PARAM
 
     private const val KEY_CURRENT_GAME_PACKAGE = "currentGamePackageName="
     private const val KEY_OPLUS_MAGIC_VOICE = "oplusmagicvoiceinfo="

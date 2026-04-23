@@ -1,17 +1,19 @@
 package com.qwulise.voicechanger.module
 
 import android.app.Application
+import android.content.Context
 import android.media.AudioRecord
+import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
+import com.qwulise.voicechanger.core.VoiceConfigFileBridge
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.nio.ByteBuffer
 import java.util.Collections
-import java.util.concurrent.atomic.AtomicBoolean
 
 class AudioHookEntry : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
@@ -20,12 +22,59 @@ class AudioHookEntry : IXposedHookLoadPackage {
             return
         }
 
-        if (!installed.compareAndSet(false, true)) {
-            return
+        val installKey = "${lpparam.processName ?: packageName}|$packageName"
+        synchronized(installedPackages) {
+            if (!installedPackages.add(installKey)) {
+                return
+            }
         }
 
         XposedBridge.log("Voicechanger: installing safe AudioRecord.read hook in $packageName")
+        XposedBridge.hookAllMethods(Application::class.java, "attach", createApplicationAttachHook(packageName))
+        XposedBridge.hookAllConstructors(AudioRecord::class.java, createAudioRecordConstructorHook(packageName))
+        XposedBridge.hookAllMethods(AudioRecord::class.java, "startRecording", createStartRecordingHook(packageName))
         XposedBridge.hookAllMethods(AudioRecord::class.java, "read", createAudioReadHook(packageName))
+    }
+
+    private fun createApplicationAttachHook(packageName: String) = object : XC_MethodHook() {
+        override fun afterHookedMethod(param: MethodHookParam) {
+            val context = param.args.firstOrNull() as? Context
+            ProcessContextResolver.attach(context)
+            DiagnosticsClient.reportEvent(
+                packageName = packageName,
+                source = "Application.attach",
+                detail = "LSPosed module injected. process=${android.os.Process.myPid()} rootConfig=${VoiceConfigFileBridge.readConfigFile() != null}",
+                rateKey = "$packageName|Application.attach|injected",
+                minIntervalMs = 15_000L,
+            )
+            VendorHalBridge.applyIfConfigured(
+                packageName = packageName,
+                config = ConfigClient.getConfig(),
+                reason = "Application.attach",
+                force = true,
+            )
+        }
+    }
+
+    private fun createAudioRecordConstructorHook(packageName: String) = object : XC_MethodHook() {
+        override fun afterHookedMethod(param: MethodHookParam) {
+            VendorHalBridge.applyIfConfigured(
+                packageName = packageName,
+                config = ConfigClient.getConfig(),
+                reason = "AudioRecord.<init>",
+            )
+        }
+    }
+
+    private fun createStartRecordingHook(packageName: String) = object : XC_MethodHook() {
+        override fun beforeHookedMethod(param: MethodHookParam) {
+            VendorHalBridge.applyIfConfigured(
+                packageName = packageName,
+                config = ConfigClient.getConfig(),
+                reason = "AudioRecord.startRecording",
+                force = true,
+            )
+        }
     }
 
     private fun createAudioReadHook(packageName: String) = object : XC_MethodHook() {
@@ -45,6 +94,11 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
 
         val config = ConfigClient.getConfig()
+        VendorHalBridge.applyIfConfigured(
+            packageName = packageName,
+            config = config,
+            reason = "AudioRecord.read",
+        )
         if (!config.enabled) {
             DiagnosticsClient.reportEvent(
                 packageName = packageName,
@@ -151,22 +205,26 @@ class AudioHookEntry : IXposedHookLoadPackage {
                     return cachedConfig
                 }
 
-                val context = ContextResolver.resolve() ?: return cachedConfig.also {
+                val rootConfig = VoiceConfigFileBridge.readConfigFile()
+                val context = ProcessContextResolver.resolve()
+                if (context == null) {
+                    cachedConfig = rootConfig ?: cachedConfig
                     lastLoadedAt = refreshedNow
+                    return cachedConfig
                 }
 
                 cachedConfig = try {
                     VoiceConfig.fromBundle(
-                        context.contentResolver.call(
+                        requireNotNull(context.contentResolver.call(
                             VoiceConfigContract.CONTENT_URI,
                             VoiceConfigContract.METHOD_GET_CONFIG,
                             null,
                             null,
-                        ),
+                        )) { "provider returned null config" },
                     )
                 } catch (error: Throwable) {
                     XposedBridge.log("Voicechanger: config fetch failed: $error")
-                    cachedConfig
+                    rootConfig ?: cachedConfig
                 }
 
                 lastLoadedAt = refreshedNow
@@ -191,21 +249,35 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 return
             }
 
-            val context = ContextResolver.resolve() ?: return
             runCatching {
-                context.contentResolver.call(
-                    VoiceConfigContract.CONTENT_URI,
-                    VoiceConfigContract.METHOD_APPEND_LOG,
-                    null,
-                    android.os.Bundle().apply {
-                        putString(VoiceConfigContract.KEY_LOG_PACKAGE_NAME, packageName)
-                        putString(VoiceConfigContract.KEY_LOG_SOURCE, source)
-                        putString(VoiceConfigContract.KEY_LOG_DETAIL, detail)
-                        putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, now)
-                    },
+                val event = DiagnosticEvent(
+                    timestampMs = now,
+                    packageName = packageName,
+                    source = source,
+                    detail = detail,
                 )
-                synchronized(lastEvents) {
-                    lastEvents[rateKey] = now
+                val context = ProcessContextResolver.resolve()
+                val delivered = if (context == null) {
+                    VoiceConfigFileBridge.appendEventFile(event)
+                } else {
+                    runCatching {
+                        requireNotNull(context.contentResolver.call(
+                            VoiceConfigContract.CONTENT_URI,
+                            VoiceConfigContract.METHOD_APPEND_LOG,
+                            null,
+                            android.os.Bundle().apply {
+                                putString(VoiceConfigContract.KEY_LOG_PACKAGE_NAME, packageName)
+                                putString(VoiceConfigContract.KEY_LOG_SOURCE, source)
+                                putString(VoiceConfigContract.KEY_LOG_DETAIL, detail)
+                                putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, now)
+                            },
+                        )) { "provider returned null append result" }
+                    }.isSuccess || VoiceConfigFileBridge.appendEventFile(event)
+                }
+                if (delivered) {
+                    synchronized(lastEvents) { lastEvents[rateKey] = now }
+                } else {
+                    XposedBridge.log("Voicechanger: diagnostics report failed for $source in $packageName")
                 }
             }.onFailure {
                 XposedBridge.log("Voicechanger: diagnostics report failed: $it")
@@ -213,19 +285,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
     }
 
-    private object ContextResolver {
-        fun resolve(): android.content.Context? {
-            val application = try {
-                val activityThread = Class.forName("android.app.ActivityThread")
-                activityThread.getMethod("currentApplication").invoke(null) as? Application
-            } catch (_: Throwable) {
-                null
-            }
-            return application?.applicationContext
-        }
-    }
-
     companion object {
-        private val installed = AtomicBoolean(false)
+        private val installedPackages = Collections.synchronizedSet(mutableSetOf<String>())
     }
 }

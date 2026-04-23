@@ -1,9 +1,10 @@
 package com.qwulise.voicechanger.module
 
-import android.app.Application
 import android.os.Bundle
+import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.VoiceConfig
 import com.qwulise.voicechanger.core.VoiceConfigContract
+import com.qwulise.voicechanger.core.VoiceConfigFileBridge
 import de.robv.android.xposed.XposedBridge
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -89,21 +90,35 @@ object NativeAudioBridge {
             }
         }
 
-        val context = resolveContext() ?: return
+        val event = DiagnosticEvent(
+            timestampMs = now,
+            packageName = packageName,
+            source = source,
+            detail = detail,
+        )
+        val context = resolveContext()
         runCatching {
-            context.contentResolver.call(
-                VoiceConfigContract.CONTENT_URI,
-                VoiceConfigContract.METHOD_APPEND_LOG,
-                null,
-                Bundle().apply {
-                    putString(VoiceConfigContract.KEY_LOG_PACKAGE_NAME, packageName)
-                    putString(VoiceConfigContract.KEY_LOG_SOURCE, source)
-                    putString(VoiceConfigContract.KEY_LOG_DETAIL, detail)
-                    putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, now)
-                },
-            )
-            synchronized(lastEvents) {
-                lastEvents[rateKey] = now
+            val delivered = if (context == null) {
+                VoiceConfigFileBridge.appendEventFile(event)
+            } else {
+                runCatching {
+                    requireNotNull(context.contentResolver.call(
+                        VoiceConfigContract.CONTENT_URI,
+                        VoiceConfigContract.METHOD_APPEND_LOG,
+                        null,
+                        Bundle().apply {
+                            putString(VoiceConfigContract.KEY_LOG_PACKAGE_NAME, packageName)
+                            putString(VoiceConfigContract.KEY_LOG_SOURCE, source)
+                            putString(VoiceConfigContract.KEY_LOG_DETAIL, detail)
+                            putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, now)
+                        },
+                    )) { "provider returned null append result" }
+                }.isSuccess || VoiceConfigFileBridge.appendEventFile(event)
+            }
+            if (delivered) {
+                synchronized(lastEvents) { lastEvents[rateKey] = now }
+            } else {
+                XposedBridge.log("Voicechanger: native diagnostics file/provider unavailable")
             }
         }.onFailure {
             XposedBridge.log("Voicechanger: native diagnostics report failed: $it")
@@ -125,22 +140,26 @@ object NativeAudioBridge {
                 return cachedConfig
             }
 
-            val context = resolveContext() ?: return cachedConfig.also {
+            val rootConfig = VoiceConfigFileBridge.readConfigFile()
+            val context = resolveContext()
+            if (context == null) {
+                cachedConfig = rootConfig ?: cachedConfig
                 lastConfigLoadedAt = refreshedNow
+                return cachedConfig
             }
 
             cachedConfig = try {
                 VoiceConfig.fromBundle(
-                    context.contentResolver.call(
+                    requireNotNull(context.contentResolver.call(
                         VoiceConfigContract.CONTENT_URI,
                         VoiceConfigContract.METHOD_GET_CONFIG,
                         null,
                         null,
-                    ),
+                    )) { "provider returned null config" },
                 )
             } catch (error: Throwable) {
                 XposedBridge.log("Voicechanger: native config fetch failed: $error")
-                cachedConfig
+                rootConfig ?: cachedConfig
             }
 
             lastConfigLoadedAt = refreshedNow
@@ -155,13 +174,7 @@ object NativeAudioBridge {
     }
 
     private fun resolveContext(): android.content.Context? {
-        val application = try {
-            val activityThread = Class.forName("android.app.ActivityThread")
-            activityThread.getMethod("currentApplication").invoke(null) as? Application
-        } catch (_: Throwable) {
-            null
-        }
-        return application?.applicationContext
+        return ProcessContextResolver.resolve()
     }
 
     @JvmStatic

@@ -45,6 +45,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var effectSeek: SeekBar
     private lateinit var gainValue: TextView
     private lateinit var gainSeek: SeekBar
+    private lateinit var vendorHalSwitch: SwitchMaterial
+    private lateinit var vendorLoopbackSwitch: SwitchMaterial
     private lateinit var vendorTargetInput: EditText
     private lateinit var vendorParamInput: EditText
     private lateinit var vendorStatusText: TextView
@@ -103,6 +105,22 @@ class MainActivity : AppCompatActivity() {
             max = 200
             setOnSeekBarChangeListener(simpleSeekListener { updateStatusPreview() })
         }
+        vendorHalSwitch = SwitchMaterial(this).apply {
+            text = "Включить OPlus HAL через LSPosed"
+            setOnCheckedChangeListener { _, _ ->
+                if (!suppressUiCallbacks) {
+                    updateStatusPreview()
+                }
+            }
+        }
+        vendorLoopbackSwitch = SwitchMaterial(this).apply {
+            text = "Включить loopback/прослушку"
+            setOnCheckedChangeListener { _, _ ->
+                if (!suppressUiCallbacks) {
+                    updateStatusPreview()
+                }
+            }
+        }
         vendorTargetInput = EditText(this).apply {
             hint = "Пакет приложения"
             setSingleLine(true)
@@ -157,6 +175,9 @@ class MainActivity : AppCompatActivity() {
             subtitle = "Экспериментальный системный слой из Game Assistant: отправляет vendor audio parameters напрямую в AudioManager. Это обходной путь, если LSPosed AudioRecord не попадает в Telegram/WebRTC.",
         ).also { panel ->
             panel.addView(vendorStatusText)
+            panel.addView(space(10))
+            panel.addView(vendorHalSwitch)
+            panel.addView(vendorLoopbackSwitch)
             panel.addView(space(10))
             panel.addView(label("Целевой пакет"))
             panel.addView(vendorTargetInput)
@@ -224,6 +245,7 @@ class MainActivity : AppCompatActivity() {
                 refreshAvailability()
                 applyConfigToUi(it)
                 reloadLogs(showToast = false)
+                renderVendorStatus()
                 toast("Настройки сохранены в модуль.")
             }.onFailure {
                 refreshAvailability()
@@ -241,6 +263,7 @@ class MainActivity : AppCompatActivity() {
             }.onSuccess {
                 refreshAvailability()
                 applyConfigToUi(it)
+                renderVendorStatus()
                 toast("Конфиг модуля сброшен.")
             }.onFailure {
                 refreshAvailability()
@@ -380,6 +403,9 @@ class MainActivity : AppCompatActivity() {
         modeSpinner.setSelection(modeItems.indexOf(config.mode).coerceAtLeast(0), false)
         effectSeek.progress = config.effectStrength
         gainSeek.progress = config.micGainPercent
+        vendorHalSwitch.isChecked = config.vendorHalEnabled
+        vendorLoopbackSwitch.isChecked = config.vendorHalLoopback
+        vendorParamInput.setText(config.vendorHalParam.ifBlank { VendorAudioController.DEFAULT_OPLUS_ELECTRIC_PARAM })
         suppressUiCallbacks = false
         renderValueLabels()
         updateStatusPreview()
@@ -392,6 +418,9 @@ class MainActivity : AppCompatActivity() {
         micGainPercent = gainSeek.progress,
         restrictToTargets = false,
         targetPackages = emptySet(),
+        vendorHalEnabled = vendorHalSwitch.isChecked,
+        vendorHalParam = vendorParamInput.text?.toString().orEmpty(),
+        vendorHalLoopback = vendorLoopbackSwitch.isChecked,
     ).sanitized()
 
     private fun renderModuleInfo(info: ModuleInfo?) {
@@ -438,8 +467,8 @@ class MainActivity : AppCompatActivity() {
     private fun failureHint(): String =
         when {
             currentAvailability.providerCallable -> currentAvailability.describe()
-            currentAvailability.packageInstalled -> "Пакет модуля есть, но provider не отвечает. Переустанови оба release APK из одного run. ${currentAvailability.describe()}"
-            else -> "Companion не видит пакет модуля. Установи module-release.apk. ${currentAvailability.describe()}"
+            currentAvailability.packageInstalled -> "Пакет модуля есть, но provider не отвечает. Проверь root-доступ для записи bridge-файла и переустанови оба release APK из одного run. ${currentAvailability.describe()}"
+            else -> "Companion не видит пакет модуля. Установи module-release.apk и дай companion root при сохранении. ${currentAvailability.describe()}"
         }
 
     private fun updateStatusPreview() {
@@ -459,6 +488,8 @@ class MainActivity : AppCompatActivity() {
             append(
                 "Выбор приложений теперь идет только через LSPosed scope.",
             )
+            append("\nOPlus HAL через LSPosed: ")
+            append(if (config.vendorHalEnabled) "включен" else "выключен")
         }
     }
 
@@ -469,33 +500,49 @@ class MainActivity : AppCompatActivity() {
             append(status.describe())
             append("\ncompanion RECORD_AUDIO: ")
             append(if (micGranted) "разрешен" else "не разрешен")
+            append("\n\nRoot bridge:")
+            append("\n")
+            append(RootConfigPublisher.describePaths())
             append("\n\nКоманды найдены в OPlus Game Assistant:")
             append("\ncurrentGamePackageName=<pkg>")
             append("\noplusmagicvoiceinfo=<param>|<pkg>|true")
             append("\nclearMagicVoiceInfo=true")
             append("\nmagicvoiceloopbackpackage=<pkg>")
+            append("\n\nЕсли включить LSPosed-режим, эти же команды уйдут из процесса целевого приложения при старте и перед AudioRecord.startRecording. Конфиг дублируется через root-файл, чтобы не зависеть от package visibility целевого приложения.")
         }
     }
 
     private fun applyOplusHal() {
         val target = vendorTargetInput.text?.toString().orEmpty().trim()
         val param = vendorParamInput.text?.toString().orEmpty().trim()
+        vendorHalSwitch.isChecked = true
         saveVendorInputs(target, param)
+        val saveResult = runCatching {
+            ModuleConfigClient.save(this, readConfigFromUi())
+        }
+        if (saveResult.isFailure) {
+            appendCompanionLog(
+                source = "oplus-hal-error",
+                detail = "Не удалось сохранить LSPosed/root config: ${saveResult.exceptionOrNull()?.message ?: "unknown"}",
+            )
+            toast("Не удалось сохранить root config: ${saveResult.exceptionOrNull()?.message ?: "unknown"}")
+            return
+        }
 
         runCatching {
             VendorAudioController.applyOplusMagicVoice(
                 context = this,
                 targetPackage = target,
                 voiceParam = param,
-                enableLoopback = false,
+                enableLoopback = vendorLoopbackSwitch.isChecked,
             )
         }.onSuccess { commands ->
             appendCompanionLog(
                 source = "oplus-hal",
-                detail = "Applied ${commands.size} commands:\n${commands.joinToString("\n")}",
+                detail = "Applied from companion and saved LSPosed target-process mode. Commands=${commands.size}:\n${commands.joinToString("\n")}",
             )
             renderVendorStatus()
-            toast("OPlus HAL применен для $target.")
+            toast("OPlus HAL включен. Перезапусти целевое приложение.")
         }.onFailure {
             appendCompanionLog(
                 source = "oplus-hal-error",
@@ -507,6 +554,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun clearOplusHal() {
+        vendorHalSwitch.isChecked = false
+        val saveResult = runCatching {
+            ModuleConfigClient.save(this, readConfigFromUi())
+        }
+        if (saveResult.isFailure) {
+            appendCompanionLog(
+                source = "oplus-hal-error",
+                detail = "Не удалось выключить LSPosed/root config: ${saveResult.exceptionOrNull()?.message ?: "unknown"}",
+            )
+        }
         runCatching {
             VendorAudioController.clearOplusMagicVoice(this)
         }.onSuccess { commands ->

@@ -67,6 +67,9 @@ class VoiceConfigProvider : ContentProvider() {
                 VoiceConfigContract.KEY_MIC_GAIN_PERCENT,
                 VoiceConfigContract.KEY_RESTRICT_TO_TARGETS,
                 VoiceConfigContract.KEY_TARGET_PACKAGES,
+                VoiceConfigContract.KEY_VENDOR_HAL_ENABLED,
+                VoiceConfigContract.KEY_VENDOR_HAL_PARAM,
+                VoiceConfigContract.KEY_VENDOR_HAL_LOOPBACK,
             ),
         ).apply {
             addRow(
@@ -77,6 +80,9 @@ class VoiceConfigProvider : ContentProvider() {
                     config.micGainPercent,
                     if (config.restrictToTargets) 1 else 0,
                     config.targetPackages.joinToString(","),
+                    if (config.vendorHalEnabled) 1 else 0,
+                    config.vendorHalParam,
+                    if (config.vendorHalLoopback) 1 else 0,
                 ),
             )
         }
