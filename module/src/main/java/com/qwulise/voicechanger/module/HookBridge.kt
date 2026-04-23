@@ -21,9 +21,6 @@ object HookBridge {
     fun activeTargets(): List<String> = listOf(
         "AudioRecord.read(...) Java hook",
         "AudioRecord lifecycle metadata hooks",
-        "AAudioStream_read(...) native hook",
-        "AAudioStreamBuilder_openStream native detection",
-        "AAudio callback-mode detection",
         "ContentProvider-backed shared config",
         "Per-stream PCM state cache",
         "Per-app target package routing",
@@ -32,6 +29,7 @@ object HookBridge {
     )
 
     fun plannedTargets(): List<String> = listOf(
+        "Experimental AAudio native layer re-enable after runtime validation",
         "AAudio input callback wrapper",
         "Oboe wrapper and callback path",
         "Vendor-specific native capture paths",

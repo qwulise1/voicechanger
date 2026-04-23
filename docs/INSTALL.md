@@ -17,4 +17,4 @@
    - `Весь scope` disables package restriction and processes every scoped app.
 7. Keep the diagnostics screen open while testing. The app refreshes hook logs automatically every few seconds.
 
-The current module fully covers `AudioRecord`, Java `WebRTC`, and blocking `AAudioStream_read(...)`, with native diagnostics for `AAudio` callback-mode detection. Callback `AAudio`, `Oboe`, and vendor-specific native paths can still require additional hook work.
+The current stable path covers `AudioRecord` and Java `WebRTC`. The `AAudio/Oboe/vendor` native path is kept experimental until runtime validation on real devices, so callback and vendor-specific pipelines can still require additional hook work.

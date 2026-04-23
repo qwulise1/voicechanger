@@ -26,7 +26,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
             return
         }
 
-        NativeAudioBridge.attachToProcess(packageName)
         XposedBridge.log("Voicechanger: installing hooks in $packageName")
         DiagnosticsClient.reportEvent(
             packageName = packageName,

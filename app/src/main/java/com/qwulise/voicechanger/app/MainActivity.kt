@@ -1,13 +1,17 @@
 package com.qwulise.voicechanger.app
 
+import android.content.ContentValues
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
 import android.text.format.DateFormat
+import android.provider.MediaStore
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -42,6 +46,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gainSeek: SeekBar
     private lateinit var packagesInput: EditText
     private lateinit var logsText: TextView
+    private lateinit var palette: UiPalette
 
     private val modeItems = VoiceMode.entries.toList()
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -63,9 +68,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        palette = resolvePalette()
 
         val root = ScrollView(this).apply {
-            setBackgroundColor(Color.parseColor("#F4EFE6"))
+            setBackgroundColor(palette.background)
         }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -172,7 +178,7 @@ class MainActivity : AppCompatActivity() {
 
         panel(
             title = "Диагностика",
-            subtitle = "Лог нужен, чтобы быстро понять, какой слой сработал: AudioRecord, WebRTC или AAudio. Он обновляется сам, без logcat.",
+            subtitle = "Лог нужен, чтобы быстро понять, какой слой сработал: AudioRecord или WebRTC. Он обновляется сам, без logcat.",
         ).also { panel ->
             panel.addView(logsActionRow())
             panel.addView(space(10))
@@ -216,10 +222,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun actionRow(): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
+        orientation = LinearLayout.VERTICAL
         gravity = Gravity.START
 
-        addView(actionButton("Сохранить") {
+        addView(actionButton("Сохранить настройки") {
             runCatching {
                 ModuleConfigClient.save(this@MainActivity, readConfigFromUi())
             }.onSuccess {
@@ -233,13 +239,11 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        addView(actionButton("Обновить") {
+        addView(actionButton("Обновить из модуля") {
             reloadFromModule(showToast = true)
-        }.apply {
-            setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
         })
 
-        addView(actionButton("Сброс") {
+        addView(actionButton("Сбросить настройки") {
             runCatching {
                 ModuleConfigClient.reset(this@MainActivity)
             }.onSuccess {
@@ -250,13 +254,11 @@ class MainActivity : AppCompatActivity() {
                 refreshAvailability()
                 toast("Не удалось сбросить настройки. ${failureHint()}")
             }
-        }.apply {
-            setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
         })
     }
 
     private fun routingActionRow(): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
+        orientation = LinearLayout.VERTICAL
         gravity = Gravity.START
 
         addView(actionButton("Реком. scope") {
@@ -281,8 +283,6 @@ class MainActivity : AppCompatActivity() {
             }
             applyPackagePreset(packages)
             toast("Список пакетов собран из последних логов.")
-        }.apply {
-            setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
         })
 
         addView(actionButton("Весь scope") {
@@ -293,17 +293,25 @@ class MainActivity : AppCompatActivity() {
             suppressUiCallbacks = false
             updateStatusPreview()
             toast("Ограничение по пакетам отключено.")
-        }.apply {
-            setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
         })
     }
 
     private fun logsActionRow(): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
+        orientation = LinearLayout.VERTICAL
         gravity = Gravity.START
 
         addView(actionButton("Обновить логи") {
             reloadLogs(showToast = true)
+        })
+
+        addView(actionButton("Экспорт логов в Downloads") {
+            runCatching {
+                exportLogsToDownloads()
+            }.onSuccess { uri ->
+                toast("Логи экспортированы: ${uri.lastPathSegment ?: uri.toString()}")
+            }.onFailure {
+                toast("Не удалось экспортировать логи: ${it.message ?: it::class.java.simpleName}")
+            }
         })
 
         addView(actionButton("Очистить логи") {
@@ -317,21 +325,26 @@ class MainActivity : AppCompatActivity() {
                 refreshAvailability()
                 toast("Не удалось очистить логи. ${failureHint()}")
             }
-        }.apply {
-            setPadding(dp(10), paddingTop, paddingRight, paddingBottom)
         })
     }
 
     private fun actionButton(text: String, onClick: () -> Unit): Button = Button(this).apply {
         this.text = text
         setAllCaps(false)
-        minHeight = dp(44)
+        isSingleLine = false
+        minHeight = dp(48)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply {
+            bottomMargin = dp(8)
+        }
         background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(12).toFloat()
-            setColor(Color.parseColor("#103B5A"))
+            setColor(palette.buttonBackground)
         }
-        setTextColor(Color.WHITE)
+        setTextColor(palette.buttonText)
         setPadding(dp(14), dp(10), dp(14), dp(10))
         setOnClickListener { onClick() }
     }
@@ -515,6 +528,35 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun exportLogsToDownloads(): Uri {
+        val events = lastLogs.ifEmpty { ModuleConfigClient.loadLogs(this) }
+        val logText = if (events.isEmpty()) {
+            "Логов пока нет."
+        } else {
+            events.joinToString("\n\n") { event ->
+                val time = DateFormat.format("yyyy-MM-dd HH:mm:ss", Date(event.timestampMs))
+                "[$time] ${event.packageName}\n${event.source}\n${event.detail}"
+            }
+        }
+        val name = "voicechanger-logs-${System.currentTimeMillis()}.txt"
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, name)
+            put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = requireNotNull(contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)) {
+            "Не удалось создать файл в Downloads"
+        }
+        contentResolver.openOutputStream(uri)?.bufferedWriter().use { writer ->
+            requireNotNull(writer) { "Не удалось открыть файл для записи" }
+            writer.write(logText)
+        }
+        values.clear()
+        values.put(MediaStore.Downloads.IS_PENDING, 0)
+        contentResolver.update(uri, values, null, null)
+        return uri
+    }
+
     private fun simpleSeekListener(onChange: () -> Unit): SeekBar.OnSeekBarChangeListener =
         object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
@@ -534,13 +576,13 @@ class MainActivity : AppCompatActivity() {
         setPadding(0, 0, 0, dp(10))
         addView(TextView(this@MainActivity).apply {
             text = "Voicechanger"
-            setTextColor(Color.parseColor("#102A43"))
+            setTextColor(palette.titleText)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 30f)
             setTypeface(typeface, Typeface.BOLD)
         })
         addView(TextView(this@MainActivity).apply {
-            text = "Root companion для LSPosed-модуля. Управляет эффектами, маршрутизацией и live-диагностикой по AudioRecord, WebRTC и AAudio."
-            setTextColor(Color.parseColor("#486581"))
+            text = "Root companion для LSPosed-модуля. Управляет эффектами, маршрутизацией и live-диагностикой по стабильным слоям AudioRecord и WebRTC."
+            setTextColor(palette.secondaryText)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
             setLineSpacing(dp(3).toFloat(), 1.0f)
         })
@@ -551,8 +593,8 @@ class MainActivity : AppCompatActivity() {
         background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(18).toFloat()
-            setColor(Color.parseColor("#FFFDF8"))
-            setStroke(dp(1), Color.parseColor("#D9E2EC"))
+            setColor(palette.panelBackground)
+            setStroke(dp(1), palette.panelStroke)
         }
         val padding = dp(16)
         setPadding(padding, padding, padding, padding)
@@ -564,13 +606,13 @@ class MainActivity : AppCompatActivity() {
         }
         addView(TextView(this@MainActivity).apply {
             text = title
-            setTextColor(Color.parseColor("#102A43"))
+            setTextColor(palette.titleText)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
             setTypeface(typeface, Typeface.BOLD)
         })
         addView(TextView(this@MainActivity).apply {
             text = subtitle
-            setTextColor(Color.parseColor("#52606D"))
+            setTextColor(palette.secondaryText)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
             setLineSpacing(dp(3).toFloat(), 1.0f)
             setPadding(0, dp(6), 0, dp(12))
@@ -578,7 +620,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun divider(): View = View(this).apply {
-        setBackgroundColor(Color.parseColor("#D9E2EC"))
+        setBackgroundColor(palette.panelStroke)
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             dp(1),
@@ -590,14 +632,14 @@ class MainActivity : AppCompatActivity() {
 
     private fun label(text: String) = TextView(this).apply {
         this.text = text
-        setTextColor(Color.parseColor("#102A43"))
+        setTextColor(palette.titleText)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         setTypeface(typeface, Typeface.BOLD)
     }
 
     private fun body(text: String) = TextView(this).apply {
         this.text = text
-        setTextColor(Color.parseColor("#243B53"))
+        setTextColor(palette.primaryText)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
         setLineSpacing(dp(3).toFloat(), 1.0f)
     }
@@ -609,8 +651,8 @@ class MainActivity : AppCompatActivity() {
     private fun fieldBackground() = GradientDrawable().apply {
         shape = GradientDrawable.RECTANGLE
         cornerRadius = dp(12).toFloat()
-        setColor(Color.parseColor("#FFFFFF"))
-        setStroke(dp(1), Color.parseColor("#BCCCDC"))
+        setColor(palette.fieldBackground)
+        setStroke(dp(1), palette.fieldStroke)
     }
 
     private fun space(valueDp: Int): View = View(this).apply {
@@ -629,5 +671,49 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val LOG_REFRESH_INTERVAL_MS = 5_000L
+    }
+
+    private data class UiPalette(
+        val background: Int,
+        val panelBackground: Int,
+        val panelStroke: Int,
+        val titleText: Int,
+        val primaryText: Int,
+        val secondaryText: Int,
+        val fieldBackground: Int,
+        val fieldStroke: Int,
+        val buttonBackground: Int,
+        val buttonText: Int,
+    )
+
+    private fun resolvePalette(): UiPalette {
+        val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        return if (nightMode == Configuration.UI_MODE_NIGHT_YES) {
+            UiPalette(
+                background = Color.parseColor("#0B1117"),
+                panelBackground = Color.parseColor("#111C24"),
+                panelStroke = Color.parseColor("#22303D"),
+                titleText = Color.parseColor("#E6EEF5"),
+                primaryText = Color.parseColor("#D5DEE7"),
+                secondaryText = Color.parseColor("#93A4B5"),
+                fieldBackground = Color.parseColor("#0F1720"),
+                fieldStroke = Color.parseColor("#2A3A49"),
+                buttonBackground = Color.parseColor("#2D7FF9"),
+                buttonText = Color.WHITE,
+            )
+        } else {
+            UiPalette(
+                background = Color.parseColor("#F4EFE6"),
+                panelBackground = Color.parseColor("#FFFDF8"),
+                panelStroke = Color.parseColor("#D9E2EC"),
+                titleText = Color.parseColor("#102A43"),
+                primaryText = Color.parseColor("#243B53"),
+                secondaryText = Color.parseColor("#52606D"),
+                fieldBackground = Color.parseColor("#FFFFFF"),
+                fieldStroke = Color.parseColor("#BCCCDC"),
+                buttonBackground = Color.parseColor("#103B5A"),
+                buttonText = Color.WHITE,
+            )
+        }
     }
 }

@@ -8,7 +8,6 @@
 The current MVP already ships a working Java-layer microphone hook through LSPosed and keeps room for deeper native routing later:
 
 - microphone PCM interception via `AudioRecord.read(...)`;
-- native blocking-read coverage via `AAudioStream_read(...)`;
 - shared DSP profiles and routing;
 - app/module settings synchronization through a module `ContentProvider`;
 - live diagnostics, scope presets, and GitHub Actions builds.
@@ -30,7 +29,6 @@ Current MVP status:
 - Four PCM modes are available right now: Original, Robot, Bright, and Deep.
 - Optional per-app package routing is available.
 - The module keeps a live diagnostic ring buffer and now covers the Java `WebRTC` path with lifecycle tracking and a `nativeDataIsRecorded` bridge.
-- The native layer now detects `AAudio` input streams, flags callback-mode usage, and processes blocking `AAudioStream_read(...)` paths in place.
 - Recommended LSPosed scope is declared in the manifest for common messaging and voice apps.
 - The companion app can fill routing from recommended packages or from recent live logs.
 
@@ -46,6 +44,6 @@ Detailed install notes are in [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Next Steps
 
-1. Extend interception beyond the completed `AudioRecord`, Java `WebRTC`, and blocking `AAudio` layers into callback `AAudio`, `Oboe`, and vendor-native paths.
+1. Re-enable and validate the experimental `AAudio` layer on real devices, then extend into callback `AAudio`, `Oboe`, and vendor-native paths.
 2. Replace the current lightweight timbre effects with deeper pitch/formant DSP.
 3. Validate the native hook chain on more real devices and app-specific audio pipelines.
