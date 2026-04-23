@@ -23,7 +23,7 @@ class VoiceQuickTileService : TileService() {
     private fun updateTile(config: VoiceConfig? = null) {
         val current = config ?: runCatching { ModuleConfigClient.load(this) }.getOrDefault(VoiceConfig())
         qsTile?.apply {
-            label = "Voicechanger"
+            label = "qwulivoice"
             subtitle = if (current.enabled) current.mode.title else "Выключен"
             state = if (current.enabled) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
             updateTile()

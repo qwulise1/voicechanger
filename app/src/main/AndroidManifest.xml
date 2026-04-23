@@ -5,9 +5,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <queries>
-        <package android:name="com.qwulise.voicechanger.module" />
-        <package android:name="com.qwulise.voicechanger.module.debug" />
-        <provider android:authorities="com.qwulise.voicechanger.module.config" />
+        <package android:name="com.qwulivoice.beta" />
+        <package android:name="com.qwulivoice.beta.debug" />
+        <provider android:authorities="com.qwulivoice.beta.config" />
     </queries>
 
     <application

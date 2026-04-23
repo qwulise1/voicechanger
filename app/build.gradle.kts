@@ -8,7 +8,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.qwulise.voicechanger.app"
+        applicationId = "com.qwulivoice.beta.companion"
         minSdk = 29
         targetSdk = 35
         versionCode = 1

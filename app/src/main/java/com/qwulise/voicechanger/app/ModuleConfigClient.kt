@@ -37,8 +37,8 @@ data class ModuleAvailability(
 }
 
 object ModuleConfigClient {
-    private const val MODULE_RELEASE_PACKAGE = "com.qwulise.voicechanger.module.clean"
-    private const val MODULE_DEBUG_PACKAGE = "com.qwulise.voicechanger.module.clean.debug"
+    private const val MODULE_RELEASE_PACKAGE = "com.qwulivoice.beta"
+    private const val MODULE_DEBUG_PACKAGE = "com.qwulivoice.beta.debug"
 
     fun inspect(context: Context): ModuleAvailability {
         val packageManager = context.packageManager

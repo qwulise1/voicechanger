@@ -40,5 +40,5 @@ jobs:
         with:
           files: |
             module/build/outputs/apk/clean/release/*.apk
-            build/ci/voicechanger-*-release-bundle.zip
+            build/ci/qwulivoice-*-release-bundle.zip
           generate_release_notes: true

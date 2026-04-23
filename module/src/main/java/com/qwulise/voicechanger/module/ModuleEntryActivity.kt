@@ -27,8 +27,8 @@ class ModuleEntryActivity : AppCompatActivity() {
             setPadding(padding, padding, padding, padding)
         }
 
-        column.addView(title("Voicechanger"))
-        column.addView(body("Это root/LSPosed-часть Voicechanger. Настройки находятся в обычном экране приложения, а список приложений выбирается только в LSPosed. Нативный слой сейчас удержан в experimental-режиме ради стабильного старта приложений."))
+        column.addView(title("qwulivoice"))
+        column.addView(body("Это root/LSPosed-часть qwulivoice beta. Настройки находятся в обычном экране приложения, а список приложений выбирается только в LSPosed. Нативный слой сейчас удержан в experimental-режиме ради стабильного старта приложений."))
         column.addView(panel("Включи в LSPosed").apply {
             addView(body("Рекомендуемый scope, который модуль также отдает самому LSPosed:"))
             addView(mono(resources.getStringArray(R.array.recommended_scopes).joinToString("\n") { "• $it" }))

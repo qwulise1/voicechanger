@@ -6,14 +6,14 @@ import java.io.StringWriter
 import java.util.Properties
 
 object VoiceConfigFileBridge {
-    const val CONFIG_PATH = "/data/local/tmp/voicechanger-config.properties"
-    const val LOG_PATH = "/data/local/tmp/voicechanger-events.log"
+    const val CONFIG_PATH = "/data/local/tmp/qwulivoice-config.properties"
+    const val LOG_PATH = "/data/local/tmp/qwulivoice-events.log"
 
     fun configPathFor(packageName: String): String =
-        "/data/local/tmp/voicechanger-${safeName(packageName)}.properties"
+        "/data/local/tmp/qwulivoice-${safeName(packageName)}.properties"
 
     fun logPathFor(packageName: String): String =
-        "/data/local/tmp/voicechanger-${safeName(packageName)}.events.log"
+        "/data/local/tmp/qwulivoice-${safeName(packageName)}.events.log"
 
     fun encodeConfig(config: VoiceConfig): String {
         val sanitized = config.sanitized()
@@ -29,7 +29,7 @@ object VoiceConfigFileBridge {
             setProperty(VoiceConfigContract.KEY_VENDOR_HAL_LOOPBACK, sanitized.vendorHalLoopback.toString())
         }
         return StringWriter().also { writer ->
-            properties.store(writer, "Voicechanger root bridge config")
+            properties.store(writer, "qwulivoice root bridge config")
         }.toString()
     }
 
@@ -40,7 +40,7 @@ object VoiceConfigFileBridge {
         return VoiceConfig(
             enabled = properties.boolean(VoiceConfigContract.KEY_ENABLED, false),
             modeId = properties.getProperty(VoiceConfigContract.KEY_MODE_ID) ?: VoiceMode.default.id,
-            effectStrength = properties.int(VoiceConfigContract.KEY_EFFECT_STRENGTH, 85),
+            effectStrength = properties.int(VoiceConfigContract.KEY_EFFECT_STRENGTH, 100),
             micGainPercent = properties.int(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 0),
             restrictToTargets = properties.boolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false),
             targetPackages = properties.getProperty(VoiceConfigContract.KEY_TARGET_PACKAGES)

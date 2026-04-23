@@ -28,7 +28,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }
         }
 
-        XposedBridge.log("Voicechanger: installing safe AudioRecord.read hook in $packageName")
+        XposedBridge.log("qwulivoice: installing safe AudioRecord.read hook in $packageName")
         XposedBridge.hookAllMethods(Application::class.java, "attach", createApplicationAttachHook(packageName))
         XposedBridge.hookAllConstructors(AudioRecord::class.java, createAudioRecordConstructorHook(packageName))
         XposedBridge.hookAllMethods(AudioRecord::class.java, "startRecording", createStartRecordingHook(packageName))
@@ -72,7 +72,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
             runCatching {
                 processReadResult(packageName, param)
             }.onFailure {
-                XposedBridge.log("Voicechanger: AudioRecord.read hook failed in $packageName: $it")
+                XposedBridge.log("qwulivoice: AudioRecord.read hook failed in $packageName: $it")
             }
         }
     }
@@ -208,7 +208,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                         )) { "provider returned null config" },
                     )
                 } catch (error: Throwable) {
-                    XposedBridge.log("Voicechanger: config fetch failed: $error")
+                    XposedBridge.log("qwulivoice: config fetch failed: $error")
                     rootConfig ?: cachedConfig
                 }
 
@@ -262,10 +262,10 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 if (delivered) {
                     synchronized(lastEvents) { lastEvents[rateKey] = now }
                 } else {
-                    XposedBridge.log("Voicechanger: diagnostics report failed for $source in $packageName")
+                    XposedBridge.log("qwulivoice: diagnostics report failed for $source in $packageName")
                 }
             }.onFailure {
-                XposedBridge.log("Voicechanger: diagnostics report failed: $it")
+                XposedBridge.log("qwulivoice: diagnostics report failed: $it")
             }
         }
     }

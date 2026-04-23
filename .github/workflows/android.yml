@@ -62,22 +62,22 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: voicechanger-clean-debug
+          name: qwulivoice-beta-debug
           path: module/build/outputs/apk/clean/debug/*.apk
 
-      - name: Upload clean release APK
+      - name: Upload beta release APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: voicechanger-clean-release
+          name: qwulivoice-beta-release
           path: module/build/outputs/apk/clean/release/*.apk
 
       - name: Upload release bundle
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: voicechanger-release-bundle
-          path: build/ci/voicechanger-*-release-bundle.zip
+          name: qwulivoice-release-bundle
+          path: build/ci/qwulivoice-*-release-bundle.zip
 
       - name: Publish latest artifacts branch
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -85,18 +85,18 @@ jobs:
         run: |
           set -euo pipefail
           out_dir="$(mktemp -d)"
-          cp module/build/outputs/apk/clean/release/*.apk "$out_dir/Voicechanger-clean-release.apk"
-          cp module/build/outputs/apk/clean/debug/*.apk "$out_dir/Voicechanger-clean-debug.apk"
-          cp build/ci/voicechanger-*-release-bundle.zip "$out_dir/"
+          cp module/build/outputs/apk/clean/release/*.apk "$out_dir/qwulivoice-beta-release.apk"
+          cp module/build/outputs/apk/clean/debug/*.apk "$out_dir/qwulivoice-beta-debug.apk"
+          cp build/ci/qwulivoice-*-release-bundle.zip "$out_dir/"
           cp build/ci/android-build.log "$out_dir/android-build.log"
           cat > "$out_dir/README.txt" <<EOF
-          Voicechanger latest build
+          qwulivoice latest build
           Commit: ${GITHUB_SHA}
           Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
           Install one release APK from this folder.
           Release APKs are CI debug-key signed test builds:
-          - Voicechanger-clean-release.apk: clean LSPosed module without OPlus vendor layer
+          - qwulivoice-beta-release.apk: package com.qwulivoice.beta
           EOF
 
           git config user.name "github-actions[bot]"

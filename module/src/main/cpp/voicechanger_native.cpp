@@ -14,7 +14,7 @@
 
 namespace {
 
-constexpr const char *kTag = "VoicechangerNative";
+constexpr const char *kTag = "qwulivoiceNative";
 constexpr double kPi = 3.14159265358979323846;
 constexpr int64_t kConfigCacheWindowMs = 800;
 
@@ -38,7 +38,7 @@ struct NativeConfigSnapshot {
     bool enabled = false;
     bool allowed = false;
     std::string modeId = "original";
-    int effectStrength = 85;
+    int effectStrength = 100;
     int micGainPercent = 0;
     int64_t loadedAtMs = 0;
     bool valid = false;

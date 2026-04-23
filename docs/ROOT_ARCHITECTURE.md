@@ -1,8 +1,8 @@
-# Root Voicechanger Architecture
+# Root qwulivoice Architecture
 
 ## Target Shape
 
-Voicechanger now ships as one LSPosed APK per variant. The UI, config provider, root bridge, and hook entrypoint live in the same installed package.
+qwulivoice ships as one LSPosed APK. The UI, config provider, root bridge, and hook entrypoint live in the same installed package.
 
 - `module`: installable LSPosed APK with UI and hook code.
 - `core:dsp`: shared config, root bridge encoding, and PCM processor.

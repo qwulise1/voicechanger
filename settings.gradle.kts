@@ -17,7 +17,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "voicechanger"
+rootProject.name = "qwulivoice"
 include(":app")
 include(":module")
 include(":core:dsp")

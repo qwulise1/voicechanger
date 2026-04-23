@@ -33,7 +33,7 @@ class DiagnosticLogStore(context: Context) {
     }
 
     companion object {
-        private const val PREFERENCES_NAME = "voicechanger_module_logs"
+        private const val PREFERENCES_NAME = "qwulivoice_module_logs"
         private const val KEY_LOG_DATA = "log_data"
         private const val RECORD_SEPARATOR = "\u001e"
         private const val MAX_RECORDS = 80

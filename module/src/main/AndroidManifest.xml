@@ -39,7 +39,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="Root voicechanger with live config, diagnostics, recommended LSPosed scope, and native capture hooks." />
+            android:value="qwulivoice beta: root voice changer with live config, diagnostics, recommended LSPosed scope, and capture hooks." />
         <meta-data
             android:name="xposedscope"
             android:resource="@array/recommended_scopes" />
@@ -49,7 +49,7 @@
 
         <provider
             android:name=".VoiceConfigProvider"
-            android:authorities="${applicationId}.config;com.qwulise.voicechanger.module.config"
+            android:authorities="${applicationId}.config"
             android:exported="true" />
     </application>
 

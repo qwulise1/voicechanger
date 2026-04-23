@@ -11,7 +11,7 @@ class VoiceConfigStore(context: Context) {
         enabled = preferences.getBoolean(VoiceConfigContract.KEY_ENABLED, false),
         modeId = preferences.getString(VoiceConfigContract.KEY_MODE_ID, null)
             ?: VoiceConfig().modeId,
-        effectStrength = preferences.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 85),
+        effectStrength = preferences.getInt(VoiceConfigContract.KEY_EFFECT_STRENGTH, 100),
         micGainPercent = preferences.getInt(VoiceConfigContract.KEY_MIC_GAIN_PERCENT, 0),
         restrictToTargets = preferences.getBoolean(VoiceConfigContract.KEY_RESTRICT_TO_TARGETS, false),
         targetPackages = preferences.getStringSet(VoiceConfigContract.KEY_TARGET_PACKAGES, emptySet()) ?: emptySet(),
@@ -40,6 +40,6 @@ class VoiceConfigStore(context: Context) {
     fun reset(): VoiceConfig = write(VoiceConfig())
 
     companion object {
-        private const val PREFERENCES_NAME = "voicechanger_module_config"
+        private const val PREFERENCES_NAME = "qwulivoice_module_config"
     }
 }

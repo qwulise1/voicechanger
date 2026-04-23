@@ -20,7 +20,7 @@ data class NativeConfigSnapshot(
             enabled = false,
             allowed = false,
             modeId = "original",
-            effectStrength = 85,
+            effectStrength = 100,
             micGainPercent = 0,
         )
     }
@@ -46,13 +46,13 @@ object NativeAudioBridge {
         runCatching {
             ensureLoaded()
         }.onFailure {
-            XposedBridge.log("Voicechanger: native library load failed: $it")
+            XposedBridge.log("qwulivoice: native library load failed: $it")
             return
         }
         runCatching {
             nativeSetProcessPackageName(packageName)
         }.onFailure {
-            XposedBridge.log("Voicechanger: native package attach failed: $it")
+            XposedBridge.log("qwulivoice: native package attach failed: $it")
         }
     }
 
@@ -117,10 +117,10 @@ object NativeAudioBridge {
             if (delivered) {
                 synchronized(lastEvents) { lastEvents[rateKey] = now }
             } else {
-                XposedBridge.log("Voicechanger: native diagnostics file/provider unavailable")
+                XposedBridge.log("qwulivoice: native diagnostics file/provider unavailable")
             }
         }.onFailure {
-            XposedBridge.log("Voicechanger: native diagnostics report failed: $it")
+            XposedBridge.log("qwulivoice: native diagnostics report failed: $it")
         }
     }
 
@@ -157,7 +157,7 @@ object NativeAudioBridge {
                     )) { "provider returned null config" },
                 )
             } catch (error: Throwable) {
-                XposedBridge.log("Voicechanger: native config fetch failed: $error")
+                XposedBridge.log("qwulivoice: native config fetch failed: $error")
                 rootConfig ?: cachedConfig
             }
 

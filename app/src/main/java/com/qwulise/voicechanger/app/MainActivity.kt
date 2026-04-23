@@ -77,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         boostValue = body("")
         effectSlider = GlassSlider(this).apply {
             max = 100
-            progress = 85
+            progress = 100
             setColors(palette.accent, palette.sliderTrack, palette.sliderThumb)
             onProgressChange = { onConfigChanged() }
         }
@@ -241,7 +241,7 @@ class MainActivity : AppCompatActivity() {
         layoutParams = panelParams(14)
 
         addView(TextView(this@MainActivity).apply {
-            text = "Voicechanger"
+            text = "qwulivoice"
             setTextColor(palette.titleText)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 32f)
             setTypeface(typeface, Typeface.BOLD)
@@ -290,7 +290,7 @@ class MainActivity : AppCompatActivity() {
         addView(boostSlider)
     }
 
-    private fun footer(): TextView = body("Автор: @qwulise\nБыстрое включение можно добавить в шторку: плитка Voicechanger.").apply {
+    private fun footer(): TextView = body("Автор: @qwulise\nБыстрое включение можно добавить в шторку: плитка qwulivoice.").apply {
         gravity = Gravity.CENTER
         setTextColor(palette.secondaryText)
         setPadding(dp(8), dp(8), dp(8), 0)

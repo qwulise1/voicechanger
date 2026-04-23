@@ -9,11 +9,11 @@ android {
     ndkVersion = "27.1.12297006"
 
     defaultConfig {
-        applicationId = "com.qwulise.voicechanger.module"
+        applicationId = "com.qwulivoice.beta"
         minSdk = 29
         targetSdk = 35
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.3.0-beta"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -30,7 +30,6 @@ android {
     productFlavors {
         create("clean") {
             dimension = "vendor"
-            applicationIdSuffix = ".clean"
         }
     }
 

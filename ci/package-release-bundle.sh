@@ -5,7 +5,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 CI_DIR="${ROOT_DIR}/build/ci"
 STAGE_DIR="${CI_DIR}/release-bundle"
 VERSION_NAME="$(awk -F'"' '/versionName =/ { print $2; exit }' "${ROOT_DIR}/module/build.gradle.kts")"
-BUNDLE_NAME="voicechanger-${VERSION_NAME}-release-bundle"
+BUNDLE_NAME="qwulivoice-${VERSION_NAME}-release-bundle"
 BUNDLE_DIR="${STAGE_DIR}/${BUNDLE_NAME}"
 ZIP_PATH="${CI_DIR}/${BUNDLE_NAME}.zip"
 
@@ -19,15 +19,15 @@ fi
 rm -rf "${STAGE_DIR}"
 mkdir -p "${BUNDLE_DIR}"
 
-cp "${clean_apk}" "${BUNDLE_DIR}/Voicechanger-clean-${VERSION_NAME}-release.apk"
+cp "${clean_apk}" "${BUNDLE_DIR}/qwulivoice-beta-${VERSION_NAME}-release.apk"
 cp "${ROOT_DIR}/README.md" "${BUNDLE_DIR}/README.md"
 cp "${ROOT_DIR}/docs/INSTALL.md" "${BUNDLE_DIR}/INSTALL.md"
 
 cat > "${BUNDLE_DIR}/CONTENTS.txt" <<EOF
-Voicechanger ${VERSION_NAME} release bundle
+qwulivoice ${VERSION_NAME} release bundle
 
 Files:
-- Voicechanger-clean-${VERSION_NAME}-release.apk
+- qwulivoice-beta-${VERSION_NAME}-release.apk
 - README.md
 - INSTALL.md
 EOF
