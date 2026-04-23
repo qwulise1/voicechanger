@@ -132,8 +132,24 @@ object ModuleConfigClient {
         )
     }
 
+    fun appendLog(context: Context, event: DiagnosticEvent) {
+        context.contentResolver.call(
+            VoiceConfigContract.CONTENT_URI,
+            VoiceConfigContract.METHOD_APPEND_LOG,
+            null,
+            event.toBundle(),
+        )
+    }
+
     private fun isPackageInstalled(packageManager: android.content.pm.PackageManager, packageName: String): Boolean =
         runCatching {
             packageManager.getPackageInfo(packageName, 0)
         }.isSuccess
+}
+
+private fun DiagnosticEvent.toBundle(): android.os.Bundle = android.os.Bundle().apply {
+    putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, timestampMs)
+    putString(VoiceConfigContract.KEY_LOG_PACKAGE_NAME, packageName)
+    putString(VoiceConfigContract.KEY_LOG_SOURCE, source)
+    putString(VoiceConfigContract.KEY_LOG_DETAIL, detail)
 }

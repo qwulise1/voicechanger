@@ -1,6 +1,9 @@
 package com.qwulise.voicechanger.app
 
+import android.Manifest
 import android.content.ContentValues
+import android.content.Context
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
@@ -42,6 +45,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var effectSeek: SeekBar
     private lateinit var gainValue: TextView
     private lateinit var gainSeek: SeekBar
+    private lateinit var vendorTargetInput: EditText
+    private lateinit var vendorParamInput: EditText
+    private lateinit var vendorStatusText: TextView
     private lateinit var logsText: TextView
     private lateinit var palette: UiPalette
 
@@ -97,6 +103,20 @@ class MainActivity : AppCompatActivity() {
             max = 200
             setOnSeekBarChangeListener(simpleSeekListener { updateStatusPreview() })
         }
+        vendorTargetInput = EditText(this).apply {
+            hint = "Пакет приложения"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setText(loadVendorTarget())
+        }
+        vendorParamInput = EditText(this).apply {
+            hint = "OPlus voice-param"
+            minLines = 2
+            maxLines = 5
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            setText(loadVendorParam())
+        }
+        vendorStatusText = monoBody("")
         logsText = monoBody("Логи еще не загружены.")
 
         column.addView(headerBlock())
@@ -133,6 +153,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         panel(
+            title = "OPlus HAL",
+            subtitle = "Экспериментальный системный слой из Game Assistant: отправляет vendor audio parameters напрямую в AudioManager. Это обходной путь, если LSPosed AudioRecord не попадает в Telegram/WebRTC.",
+        ).also { panel ->
+            panel.addView(vendorStatusText)
+            panel.addView(space(10))
+            panel.addView(label("Целевой пакет"))
+            panel.addView(vendorTargetInput)
+            panel.addView(space(10))
+            panel.addView(label("Сырой voice-param"))
+            panel.addView(vendorParamInput)
+            panel.addView(space(12))
+            panel.addView(vendorActionRow())
+            column.addView(panel)
+        }
+
+        panel(
             title = "Диагностика",
             subtitle = "Лог нужен, чтобы быстро понять, сработал ли safe-mode AudioRecord.read. Он обновляется сам, без logcat.",
         ).also { panel ->
@@ -147,6 +183,7 @@ class MainActivity : AppCompatActivity() {
 
         bindModeSpinner()
         reloadFromModule(showToast = false)
+        renderVendorStatus()
     }
 
     override fun onStart() {
@@ -241,6 +278,28 @@ class MainActivity : AppCompatActivity() {
                 refreshAvailability()
                 toast("Не удалось очистить логи. ${failureHint()}")
             }
+        })
+    }
+
+    private fun vendorActionRow(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.START
+
+        addView(actionButton("Применить OPlus voice changer") {
+            applyOplusHal()
+        })
+
+        addView(actionButton("Очистить OPlus voice changer") {
+            clearOplusHal()
+        })
+
+        addView(actionButton("Запросить микрофон для companion") {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
+        })
+
+        addView(actionButton("Проверить OPlus HAL") {
+            renderVendorStatus()
+            toast("OPlus HAL статус обновлен.")
         })
     }
 
@@ -403,6 +462,110 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderVendorStatus() {
+        val status = VendorAudioController.inspect(this)
+        val micGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        vendorStatusText.text = buildString {
+            append(status.describe())
+            append("\ncompanion RECORD_AUDIO: ")
+            append(if (micGranted) "разрешен" else "не разрешен")
+            append("\n\nКоманды найдены в OPlus Game Assistant:")
+            append("\ncurrentGamePackageName=<pkg>")
+            append("\noplusmagicvoiceinfo=<param>|<pkg>|true")
+            append("\nclearMagicVoiceInfo=true")
+            append("\nmagicvoiceloopbackpackage=<pkg>")
+        }
+    }
+
+    private fun applyOplusHal() {
+        val target = vendorTargetInput.text?.toString().orEmpty().trim()
+        val param = vendorParamInput.text?.toString().orEmpty().trim()
+        saveVendorInputs(target, param)
+
+        runCatching {
+            VendorAudioController.applyOplusMagicVoice(
+                context = this,
+                targetPackage = target,
+                voiceParam = param,
+                enableLoopback = false,
+            )
+        }.onSuccess { commands ->
+            appendCompanionLog(
+                source = "oplus-hal",
+                detail = "Applied ${commands.size} commands:\n${commands.joinToString("\n")}",
+            )
+            renderVendorStatus()
+            toast("OPlus HAL применен для $target.")
+        }.onFailure {
+            appendCompanionLog(
+                source = "oplus-hal-error",
+                detail = it.message ?: it::class.java.simpleName,
+            )
+            renderVendorStatus()
+            toast("OPlus HAL ошибка: ${it.message ?: it::class.java.simpleName}")
+        }
+    }
+
+    private fun clearOplusHal() {
+        runCatching {
+            VendorAudioController.clearOplusMagicVoice(this)
+        }.onSuccess { commands ->
+            appendCompanionLog(
+                source = "oplus-hal",
+                detail = "Cleared:\n${commands.joinToString("\n")}",
+            )
+            renderVendorStatus()
+            toast("OPlus HAL очищен.")
+        }.onFailure {
+            appendCompanionLog(
+                source = "oplus-hal-error",
+                detail = it.message ?: it::class.java.simpleName,
+            )
+            toast("Не удалось очистить OPlus HAL: ${it.message ?: it::class.java.simpleName}")
+        }
+    }
+
+    private fun appendCompanionLog(source: String, detail: String) {
+        runCatching {
+            ModuleConfigClient.appendLog(
+                this,
+                DiagnosticEvent(
+                    timestampMs = System.currentTimeMillis(),
+                    packageName = packageName,
+                    source = source,
+                    detail = detail,
+                ),
+            )
+            reloadLogs(showToast = false)
+        }
+    }
+
+    private fun loadVendorTarget(): String =
+        getPreferences(Context.MODE_PRIVATE).getString(PREF_VENDOR_TARGET, null)
+            ?: VendorAudioController.DEFAULT_TARGET_PACKAGE
+
+    private fun loadVendorParam(): String =
+        getPreferences(Context.MODE_PRIVATE).getString(PREF_VENDOR_PARAM, null)
+            ?: VendorAudioController.DEFAULT_OPLUS_ELECTRIC_PARAM
+
+    private fun saveVendorInputs(target: String, param: String) {
+        getPreferences(Context.MODE_PRIVATE).edit()
+            .putString(PREF_VENDOR_TARGET, target)
+            .putString(PREF_VENDOR_PARAM, param)
+            .apply()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_RECORD_AUDIO) {
+            renderVendorStatus()
+        }
+    }
+
     private fun exportLogsToDownloads(): Uri {
         val events = lastLogs.ifEmpty { ModuleConfigClient.loadLogs(this) }
         val logText = if (events.isEmpty()) {
@@ -539,6 +702,9 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val LOG_REFRESH_INTERVAL_MS = 5_000L
+        private const val REQUEST_RECORD_AUDIO = 1001
+        private const val PREF_VENDOR_TARGET = "vendor_target"
+        private const val PREF_VENDOR_PARAM = "vendor_param"
     }
 
     private data class UiPalette(
