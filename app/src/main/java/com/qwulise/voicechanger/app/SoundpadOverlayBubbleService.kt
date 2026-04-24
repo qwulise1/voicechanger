@@ -93,44 +93,45 @@ class SoundpadOverlayBubbleService : Service() {
             gravity = Gravity.END
         }
 
-        panelView = LinearLayout(this).apply {
+        val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
             setPadding(dp(14), dp(14), dp(14), dp(14))
-        }.also { panel ->
-            panel.addView(TextView(this).apply {
-                text = "Soundpad"
-                setTextColor(Color.WHITE)
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-                setTypeface(typeface, Typeface.BOLD)
-            })
-            panel.addView(TextView(this).apply {
-                text = "Тап по карточке запускает или останавливает конкретный звук."
-                setTextColor(Color.argb(210, 232, 224, 214))
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-                setPadding(0, dp(6), 0, dp(10))
-            })
-            val scroll = ScrollView(this).apply {
-                isVerticalScrollBarEnabled = false
-                overScrollMode = View.OVER_SCROLL_NEVER
-            }
-            padsColumn = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-            }
-            scroll.addView(
-                padsColumn,
+        }
+        val localPadsColumn = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(
+                localPadsColumn,
                 ScrollView.LayoutParams(
                     ScrollView.LayoutParams.MATCH_PARENT,
                     ScrollView.LayoutParams.WRAP_CONTENT,
                 ),
             )
-            panel.addView(
-                scroll,
-                LinearLayout.LayoutParams(dp(230), dp(300)),
-            )
         }
+        panel.addView(TextView(this).apply {
+            text = "Soundpad"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            setTypeface(typeface, Typeface.BOLD)
+        })
+        panel.addView(TextView(this).apply {
+            text = "Тап по карточке запускает или останавливает конкретный звук."
+            setTextColor(Color.argb(210, 232, 224, 214))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setPadding(0, dp(6), 0, dp(10))
+        })
+        panel.addView(
+            scroll,
+            LinearLayout.LayoutParams(dp(230), dp(300)),
+        )
+        panelView = panel
+        padsColumn = localPadsColumn
         root.addView(
-            panelView,
+            panel,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -139,7 +140,7 @@ class SoundpadOverlayBubbleService : Service() {
             },
         )
 
-        bubbleView = FrameLayout(this).apply {
+        val bubble = FrameLayout(this).apply {
             clipToOutline = true
             outlineProvider = ViewOutlineProvider.BACKGROUND
             elevation = dp(14).toFloat()
@@ -155,13 +156,13 @@ class SoundpadOverlayBubbleService : Service() {
                 clipToOutline = true
                 outlineProvider = ViewOutlineProvider.BACKGROUND
             }, FrameLayout.LayoutParams(dp(56), dp(56)))
-        }.also { bubble ->
-            bubble.setOnTouchListener(DragClickListener(params) {
-                panelVisible = !panelVisible
-                refreshOverlay()
-            })
         }
-        root.addView(bubbleView)
+        bubble.setOnTouchListener(DragClickListener(params) {
+            panelVisible = !panelVisible
+            refreshOverlay()
+        })
+        bubbleView = bubble
+        root.addView(bubble)
 
         windowManager?.addView(root, params)
         rootView = root
