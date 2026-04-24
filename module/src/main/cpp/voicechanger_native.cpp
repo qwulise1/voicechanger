@@ -7,16 +7,19 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 namespace {
 
 constexpr const char *kTag = "qwulivoiceNative";
 constexpr double kPi = 3.14159265358979323846;
 constexpr int64_t kConfigCacheWindowMs = 800;
+constexpr int64_t kSoundpadCacheWindowMs = 160;
 
 typedef int (*HookFunType)(void *func, void *replace, void **backup);
 typedef int (*UnhookFunType)(void *func);
@@ -44,12 +47,33 @@ struct NativeConfigSnapshot {
     bool valid = false;
 };
 
+struct NativeSoundpadSnapshot {
+    bool active = false;
+    std::string pcmPath;
+    int sampleRate = 48000;
+    int mixPercent = 0;
+    int gainPercent = 100;
+    bool looping = false;
+    int64_t sessionId = 0;
+    int64_t loadedAtMs = 0;
+    bool valid = false;
+};
+
 struct StreamState {
     double phase = 0.0;
     float lowPass = 0.0f;
     float previousInput = 0.0f;
     bool wasPositive = false;
     float subPolarity = 1.0f;
+    std::vector<int16_t> soundpadSamples;
+    std::string soundpadPcmPath;
+    int soundpadSourceSampleRate = 48000;
+    double soundpadPosition = 0.0;
+    int64_t soundpadSessionId = 0;
+    int64_t soundpadCompletedSessionId = 0;
+    bool soundpadLooping = false;
+    bool soundpadActive = false;
+    float soundpadMix = 0.0f;
 };
 
 struct CallbackBinding {
@@ -73,9 +97,19 @@ jmethodID gSnapshotGetAllowed = nullptr;
 jmethodID gSnapshotGetModeId = nullptr;
 jmethodID gSnapshotGetEffectStrength = nullptr;
 jmethodID gSnapshotGetMicGainPercent = nullptr;
+jmethodID gSoundpadSnapshotMethod = nullptr;
+jmethodID gSoundpadGetActive = nullptr;
+jmethodID gSoundpadGetPcmPath = nullptr;
+jmethodID gSoundpadGetSampleRate = nullptr;
+jmethodID gSoundpadGetMixPercent = nullptr;
+jmethodID gSoundpadGetGainPercent = nullptr;
+jmethodID gSoundpadGetLooping = nullptr;
+jmethodID gSoundpadGetSessionId = nullptr;
 
 std::mutex gConfigMutex;
 NativeConfigSnapshot gCachedConfig;
+std::mutex gSoundpadMutex;
+NativeSoundpadSnapshot gCachedSoundpad;
 std::mutex gStateMutex;
 std::unordered_map<AAudioStream *, StreamState> gStreamStates;
 std::unordered_map<AAudioStreamBuilder *, bool> gBuilderUsesCallback;
@@ -147,6 +181,19 @@ bool resolveBridge(JNIEnv *env) {
            gSnapshotGetMicGainPercent != nullptr;
 }
 
+bool resolveSoundpadBridge(JNIEnv *env) {
+    if (env == nullptr || gBridgeClass == nullptr || gSoundpadSnapshotMethod == nullptr) {
+        return false;
+    }
+    return gSoundpadGetActive != nullptr &&
+           gSoundpadGetPcmPath != nullptr &&
+           gSoundpadGetSampleRate != nullptr &&
+           gSoundpadGetMixPercent != nullptr &&
+           gSoundpadGetGainPercent != nullptr &&
+           gSoundpadGetLooping != nullptr &&
+           gSoundpadGetSessionId != nullptr;
+}
+
 NativeConfigSnapshot loadConfigSnapshot(const std::string &packageName) {
     const auto now = nowMs();
     {
@@ -195,6 +242,55 @@ NativeConfigSnapshot loadConfigSnapshot(const std::string &packageName) {
         gCachedConfig = snapshot;
     }
     return gCachedConfig;
+}
+
+NativeSoundpadSnapshot loadSoundpadSnapshot() {
+    const auto now = nowMs();
+    {
+        std::lock_guard<std::mutex> lock(gSoundpadMutex);
+        if (gCachedSoundpad.valid && now - gCachedSoundpad.loadedAtMs < kSoundpadCacheWindowMs) {
+            return gCachedSoundpad;
+        }
+    }
+
+    bool didAttach = false;
+    JNIEnv *env = getEnv(&didAttach);
+    if (!resolveSoundpadBridge(env)) {
+        releaseEnv(didAttach);
+        std::lock_guard<std::mutex> lock(gSoundpadMutex);
+        return gCachedSoundpad;
+    }
+
+    NativeSoundpadSnapshot snapshot;
+    jobject jSnapshot = env->CallStaticObjectMethod(gBridgeClass, gSoundpadSnapshotMethod);
+    if (jSnapshot != nullptr) {
+        snapshot.active = env->CallBooleanMethod(jSnapshot, gSoundpadGetActive);
+        snapshot.sampleRate = env->CallIntMethod(jSnapshot, gSoundpadGetSampleRate);
+        snapshot.mixPercent = env->CallIntMethod(jSnapshot, gSoundpadGetMixPercent);
+        snapshot.gainPercent = env->CallIntMethod(jSnapshot, gSoundpadGetGainPercent);
+        snapshot.looping = env->CallBooleanMethod(jSnapshot, gSoundpadGetLooping);
+        snapshot.sessionId = env->CallLongMethod(jSnapshot, gSoundpadGetSessionId);
+        jstring jPath = static_cast<jstring>(env->CallObjectMethod(jSnapshot, gSoundpadGetPcmPath));
+        if (jPath != nullptr) {
+            const char *pathChars = env->GetStringUTFChars(jPath, nullptr);
+            snapshot.pcmPath = pathChars != nullptr ? pathChars : "";
+            if (pathChars != nullptr) {
+                env->ReleaseStringUTFChars(jPath, pathChars);
+            }
+            env->DeleteLocalRef(jPath);
+        }
+        env->DeleteLocalRef(jSnapshot);
+        snapshot.valid = true;
+        snapshot.loadedAtMs = now;
+    }
+
+    releaseEnv(didAttach);
+
+    std::lock_guard<std::mutex> lock(gSoundpadMutex);
+    if (snapshot.valid) {
+        gCachedSoundpad = snapshot;
+    }
+    return gCachedSoundpad;
 }
 
 void reportEvent(
@@ -322,18 +418,165 @@ float processSample(float input, int sampleRate, const NativeConfigSnapshot &con
     return applyMicBoost(effected, config.micGainPercent);
 }
 
-void processInt16(int16_t *samples, int32_t sampleCount, int sampleRate, const NativeConfigSnapshot &config, StreamState &state) {
-    for (int32_t index = 0; index < sampleCount; ++index) {
-        const float input = static_cast<float>(samples[index]) / 32768.0f;
-        const float output = processSample(input, sampleRate, config, state);
-        const auto packed = static_cast<int32_t>(std::lrint(output * static_cast<float>(INT16_MAX)));
-        samples[index] = static_cast<int16_t>(std::clamp(packed, static_cast<int32_t>(INT16_MIN), static_cast<int32_t>(INT16_MAX)));
+float computeSoundpadMix(int mixPercent, int gainPercent) {
+    const float mix = std::pow(std::clamp(static_cast<float>(mixPercent), 0.0f, 100.0f) / 100.0f, 1.18f);
+    const float slotGain = std::pow(std::clamp(static_cast<float>(gainPercent), 0.0f, 160.0f) / 100.0f, 0.92f);
+    return std::clamp(mix * slotGain * 0.92f, 0.0f, 1.35f);
+}
+
+std::vector<int16_t> loadPcmFile(const std::string &path) {
+    if (path.empty()) {
+        return {};
+    }
+    FILE *file = std::fopen(path.c_str(), "rb");
+    if (file == nullptr) {
+        return {};
+    }
+    std::fseek(file, 0, SEEK_END);
+    const long size = std::ftell(file);
+    std::rewind(file);
+    if (size < 2) {
+        std::fclose(file);
+        return {};
+    }
+    std::vector<int16_t> samples(static_cast<size_t>(size / 2));
+    const size_t readCount = std::fread(samples.data(), sizeof(int16_t), samples.size(), file);
+    std::fclose(file);
+    samples.resize(readCount);
+    return samples;
+}
+
+bool prepareSoundpadRuntime(StreamState &state, const NativeSoundpadSnapshot *soundpad) {
+    if (soundpad == nullptr || !soundpad->active || soundpad->pcmPath.empty() || soundpad->sampleRate <= 0) {
+        state.soundpadActive = false;
+        state.soundpadMix = 0.0f;
+        return false;
+    }
+
+    const bool needsReload =
+        soundpad->sessionId != state.soundpadSessionId ||
+        soundpad->pcmPath != state.soundpadPcmPath;
+
+    if (state.soundpadCompletedSessionId == soundpad->sessionId &&
+        state.soundpadPcmPath == soundpad->pcmPath &&
+        !soundpad->looping) {
+        state.soundpadActive = false;
+        state.soundpadMix = 0.0f;
+        return false;
+    }
+
+    if (needsReload) {
+        state.soundpadSamples = loadPcmFile(soundpad->pcmPath);
+        state.soundpadPcmPath = soundpad->pcmPath;
+        state.soundpadSourceSampleRate = std::max(soundpad->sampleRate, 8000);
+        state.soundpadPosition = 0.0;
+        state.soundpadSessionId = soundpad->sessionId;
+        state.soundpadCompletedSessionId = 0;
+        state.soundpadActive = !state.soundpadSamples.empty();
+    }
+
+    state.soundpadLooping = soundpad->looping;
+    state.soundpadMix = computeSoundpadMix(soundpad->mixPercent, soundpad->gainPercent);
+    if (state.soundpadSamples.empty()) {
+        state.soundpadActive = false;
+    }
+    return state.soundpadActive && state.soundpadMix > 0.0f;
+}
+
+float nextSoundpadSample(int outputSampleRate, StreamState &state) {
+    if (!state.soundpadActive || state.soundpadSamples.empty()) {
+        return 0.0f;
+    }
+
+    const auto frameCount = static_cast<int32_t>(state.soundpadSamples.size());
+    if (frameCount <= 0) {
+        state.soundpadActive = false;
+        return 0.0f;
+    }
+
+    if (!state.soundpadLooping && state.soundpadPosition >= frameCount) {
+        state.soundpadActive = false;
+        state.soundpadCompletedSessionId = state.soundpadSessionId;
+        return 0.0f;
+    }
+    if (state.soundpadLooping && state.soundpadPosition >= frameCount) {
+        state.soundpadPosition = std::fmod(state.soundpadPosition, static_cast<double>(frameCount));
+    }
+
+    const int base = std::clamp(static_cast<int>(state.soundpadPosition), 0, frameCount - 1);
+    const int nextIndex = (base + 1 < frameCount) ? (base + 1) : (state.soundpadLooping ? 0 : base);
+    const float fraction = std::clamp(static_cast<float>(state.soundpadPosition - base), 0.0f, 1.0f);
+    const float first = static_cast<float>(state.soundpadSamples[base]) / 32768.0f;
+    const float second = static_cast<float>(state.soundpadSamples[nextIndex]) / 32768.0f;
+    const float sample = first + ((second - first) * fraction);
+    const double step = static_cast<double>(state.soundpadSourceSampleRate) /
+        static_cast<double>(std::max(outputSampleRate, 8000));
+    state.soundpadPosition += std::max(step, 0.1);
+    return std::clamp(sample * state.soundpadMix, -1.0f, 1.0f);
+}
+
+void processInt16(
+    int16_t *samples,
+    int32_t numFrames,
+    int channelCount,
+    int sampleRate,
+    const NativeConfigSnapshot *config,
+    const NativeSoundpadSnapshot *soundpad,
+    StreamState &state
+) {
+    const bool applyVoice = config != nullptr && config->valid && config->enabled && config->allowed;
+    const bool applySoundpad = prepareSoundpadRuntime(state, soundpad);
+    if (!applyVoice && !applySoundpad) {
+        return;
+    }
+
+    const int safeChannels = std::max(channelCount, 1);
+    for (int32_t frame = 0; frame < numFrames; ++frame) {
+        const float pad = applySoundpad ? nextSoundpadSample(sampleRate, state) : 0.0f;
+        for (int channel = 0; channel < safeChannels; ++channel) {
+            const int32_t index = frame * safeChannels + channel;
+            float output = static_cast<float>(samples[index]) / 32768.0f;
+            if (applyVoice) {
+                output = processSample(output, sampleRate, *config, state);
+            }
+            if (applySoundpad) {
+                output = softClip(output + pad);
+            }
+            const auto packed = static_cast<int32_t>(std::lrint(output * static_cast<float>(INT16_MAX)));
+            samples[index] = static_cast<int16_t>(std::clamp(packed, static_cast<int32_t>(INT16_MIN), static_cast<int32_t>(INT16_MAX)));
+        }
     }
 }
 
-void processFloat(float *samples, int32_t sampleCount, int sampleRate, const NativeConfigSnapshot &config, StreamState &state) {
-    for (int32_t index = 0; index < sampleCount; ++index) {
-        samples[index] = processSample(samples[index], sampleRate, config, state);
+void processFloat(
+    float *samples,
+    int32_t numFrames,
+    int channelCount,
+    int sampleRate,
+    const NativeConfigSnapshot *config,
+    const NativeSoundpadSnapshot *soundpad,
+    StreamState &state
+) {
+    const bool applyVoice = config != nullptr && config->valid && config->enabled && config->allowed;
+    const bool applySoundpad = prepareSoundpadRuntime(state, soundpad);
+    if (!applyVoice && !applySoundpad) {
+        return;
+    }
+
+    const int safeChannels = std::max(channelCount, 1);
+    for (int32_t frame = 0; frame < numFrames; ++frame) {
+        const float pad = applySoundpad ? nextSoundpadSample(sampleRate, state) : 0.0f;
+        for (int channel = 0; channel < safeChannels; ++channel) {
+            const int32_t index = frame * safeChannels + channel;
+            float output = samples[index];
+            if (applyVoice) {
+                output = processSample(output, sampleRate, *config, state);
+            }
+            if (applySoundpad) {
+                output = softClip(output + pad);
+            }
+            samples[index] = output;
+        }
     }
 }
 
@@ -390,7 +633,10 @@ aaudio_data_callback_result_t hookedAAudioDataCallback(AAudioStream *stream, voi
     if (stream != nullptr && audioData != nullptr && numFrames > 0 && !packageName.empty()) {
         if (AAudioStream_getDirection(stream) == AAUDIO_DIRECTION_INPUT) {
             const NativeConfigSnapshot config = loadConfigSnapshot(packageName);
-            if (config.valid && config.enabled && config.allowed) {
+            const NativeSoundpadSnapshot soundpad = loadSoundpadSnapshot();
+            const bool applyVoice = config.valid && config.enabled && config.allowed;
+            const bool applySoundpad = soundpad.valid && soundpad.active;
+            if (applyVoice || applySoundpad) {
                 const int sampleRate = std::max(AAudioStream_getSampleRate(stream), 8000);
                 const int channelCount = std::max(AAudioStream_getChannelCount(stream), 1);
                 const auto format = AAudioStream_getFormat(stream);
@@ -401,11 +647,27 @@ aaudio_data_callback_result_t hookedAAudioDataCallback(AAudioStream *stream, voi
                     StreamState &state = gStreamStates[stream];
                     switch (format) {
                         case AAUDIO_FORMAT_PCM_I16:
-                            processInt16(static_cast<int16_t *>(audioData), numFrames * channelCount, sampleRate, config, state);
+                            processInt16(
+                                static_cast<int16_t *>(audioData),
+                                numFrames,
+                                channelCount,
+                                sampleRate,
+                                applyVoice ? &config : nullptr,
+                                applySoundpad ? &soundpad : nullptr,
+                                state
+                            );
                             applied = true;
                             break;
                         case AAUDIO_FORMAT_PCM_FLOAT:
-                            processFloat(static_cast<float *>(audioData), numFrames * channelCount, sampleRate, config, state);
+                            processFloat(
+                                static_cast<float *>(audioData),
+                                numFrames,
+                                channelCount,
+                                sampleRate,
+                                applyVoice ? &config : nullptr,
+                                applySoundpad ? &soundpad : nullptr,
+                                state
+                            );
                             applied = true;
                             break;
                         default:
@@ -427,8 +689,9 @@ aaudio_data_callback_result_t hookedAAudioDataCallback(AAudioStream *stream, voi
                         "AAudio.callback",
                         "Applied native callback hook frames=" + std::to_string(numFrames) +
                             " rate=" + std::to_string(sampleRate) + "Hz channels=" + std::to_string(channelCount) +
-                            " format=" + formatLabel(format) + " mode=" + config.modeId +
-                            " gain=" + std::to_string(config.micGainPercent) + "%",
+                            " format=" + formatLabel(format) + " mode=" + (applyVoice ? config.modeId : "original") +
+                            " gain=" + std::to_string(applyVoice ? config.micGainPercent : 0) +
+                            "% soundpad=" + (applySoundpad ? soundpad.pcmPath : "off"),
                         false,
                         packageName + "|AAudio.callback|apply",
                         12000
@@ -463,7 +726,10 @@ aaudio_result_t hookedAAudioStreamRead(AAudioStream *stream, void *buffer, int32
     }
 
     const NativeConfigSnapshot config = loadConfigSnapshot(packageName);
-    if (!config.valid || !config.enabled || !config.allowed) {
+    const NativeSoundpadSnapshot soundpad = loadSoundpadSnapshot();
+    const bool applyVoice = config.valid && config.enabled && config.allowed;
+    const bool applySoundpad = soundpad.valid && soundpad.active;
+    if (!applyVoice && !applySoundpad) {
         return result;
     }
 
@@ -482,10 +748,26 @@ aaudio_result_t hookedAAudioStreamRead(AAudioStream *stream, void *buffer, int32
 
         switch (format) {
             case AAUDIO_FORMAT_PCM_I16:
-                processInt16(static_cast<int16_t *>(buffer), sampleCount, sampleRate, config, state);
+                processInt16(
+                    static_cast<int16_t *>(buffer),
+                    result,
+                    channelCount,
+                    sampleRate,
+                    applyVoice ? &config : nullptr,
+                    applySoundpad ? &soundpad : nullptr,
+                    state
+                );
                 break;
             case AAUDIO_FORMAT_PCM_FLOAT:
-                processFloat(static_cast<float *>(buffer), sampleCount, sampleRate, config, state);
+                processFloat(
+                    static_cast<float *>(buffer),
+                    result,
+                    channelCount,
+                    sampleRate,
+                    applyVoice ? &config : nullptr,
+                    applySoundpad ? &soundpad : nullptr,
+                    state
+                );
                 break;
             default:
                 reportEvent(
@@ -505,8 +787,9 @@ aaudio_result_t hookedAAudioStreamRead(AAudioStream *stream, void *buffer, int32
         "AAudio.read",
         "Applied native read hook frames=" + std::to_string(result) +
             " rate=" + std::to_string(sampleRate) + "Hz channels=" + std::to_string(channelCount) +
-            " format=" + formatLabel(format) + " mode=" + config.modeId +
-            " gain=" + std::to_string(config.micGainPercent) + "%",
+            " format=" + formatLabel(format) + " mode=" + (applyVoice ? config.modeId : "original") +
+            " gain=" + std::to_string(applyVoice ? config.micGainPercent : 0) +
+            "% soundpad=" + (applySoundpad ? soundpad.pcmPath : "off"),
         false,
         packageName + "|AAudio.read|apply",
         12000
@@ -638,9 +921,10 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
     jstring packageName
 ) {
     const char *raw = packageName != nullptr ? env->GetStringUTFChars(packageName, nullptr) : nullptr;
+    const std::string attachedPackage = raw != nullptr ? raw : "";
     {
         std::lock_guard<std::mutex> lock(gStateMutex);
-        gProcessPackageName = raw != nullptr ? raw : "";
+        gProcessPackageName = attachedPackage;
         gHooksEnabled = !gProcessPackageName.empty();
     }
     if (raw != nullptr) {
@@ -651,6 +935,13 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
         gCachedConfig.loadedAtMs = 0;
         gCachedConfig.valid = false;
     }
+    {
+        std::lock_guard<std::mutex> lock(gSoundpadMutex);
+        gCachedSoundpad.loadedAtMs = 0;
+        gCachedSoundpad.valid = false;
+    }
+
+    logLine(ANDROID_LOG_INFO, std::string("Attached native bridge to ") + attachedPackage);
 
     if (hooksEnabled()) {
         void *preloadedHandle = nullptr;
@@ -683,6 +974,11 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
         "snapshotForNative",
         "(Ljava/lang/String;)Lcom/qwulise/voicechanger/module/NativeConfigSnapshot;"
     );
+    gSoundpadSnapshotMethod = env->GetStaticMethodID(
+        gBridgeClass,
+        "soundpadSnapshotForNative",
+        "()Lcom/qwulise/voicechanger/module/NativeSoundpadSnapshot;"
+    );
     gReportMethod = env->GetStaticMethodID(
         gBridgeClass,
         "reportNativeEvent",
@@ -697,6 +993,17 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
         gSnapshotGetEffectStrength = env->GetMethodID(snapshotClass, "getEffectStrength", "()I");
         gSnapshotGetMicGainPercent = env->GetMethodID(snapshotClass, "getMicGainPercent", "()I");
         env->DeleteLocalRef(snapshotClass);
+    }
+    jclass soundpadSnapshotClass = env->FindClass("com/qwulise/voicechanger/module/NativeSoundpadSnapshot");
+    if (soundpadSnapshotClass != nullptr) {
+        gSoundpadGetActive = env->GetMethodID(soundpadSnapshotClass, "getActive", "()Z");
+        gSoundpadGetPcmPath = env->GetMethodID(soundpadSnapshotClass, "getPcmPath", "()Ljava/lang/String;");
+        gSoundpadGetSampleRate = env->GetMethodID(soundpadSnapshotClass, "getSampleRate", "()I");
+        gSoundpadGetMixPercent = env->GetMethodID(soundpadSnapshotClass, "getMixPercent", "()I");
+        gSoundpadGetGainPercent = env->GetMethodID(soundpadSnapshotClass, "getGainPercent", "()I");
+        gSoundpadGetLooping = env->GetMethodID(soundpadSnapshotClass, "getLooping", "()Z");
+        gSoundpadGetSessionId = env->GetMethodID(soundpadSnapshotClass, "getSessionId", "()J");
+        env->DeleteLocalRef(soundpadSnapshotClass);
     }
 
     logLine(ANDROID_LOG_INFO, "JNI bridge initialized");

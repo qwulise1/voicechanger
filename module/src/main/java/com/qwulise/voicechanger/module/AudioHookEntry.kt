@@ -40,6 +40,11 @@ class AudioHookEntry : IXposedHookLoadPackage {
             XposedBridge.log("qwulivoice: native hook skipped for $packageName")
         }
 
+        if (usesTelegramNativeOnlyMode(packageName)) {
+            XposedBridge.log("qwulivoice: using native-only path in $packageName for startup safety")
+            return
+        }
+
         if (usesTelegramScopedHooks(packageName)) {
             val scopedInstalled = installTelegramScopedHooks(packageName, lpparam.classLoader)
             XposedBridge.log("qwulivoice: installing telegram-style AudioRecord.read hook in $packageName")
@@ -523,8 +528,11 @@ class AudioHookEntry : IXposedHookLoadPackage {
         packageName == "org.telegram.messenger.beta" ||
             packageName.startsWith("com.exteragram")
 
+    private fun usesTelegramNativeOnlyMode(packageName: String): Boolean =
+        packageName == "org.telegram.messenger"
+
     private fun shouldAttachNative(packageName: String): Boolean =
-        !isTelegramFamilyPackage(packageName)
+        packageName == "org.telegram.messenger" || !isTelegramFamilyPackage(packageName)
 
     private fun shouldRestrictToMainProcess(packageName: String): Boolean =
         isTelegramFamilyPackage(packageName)

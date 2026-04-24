@@ -24,8 +24,31 @@ data class NativeConfigSnapshot(
     }
 }
 
+data class NativeSoundpadSnapshot(
+    val active: Boolean,
+    val pcmPath: String,
+    val sampleRate: Int,
+    val mixPercent: Int,
+    val gainPercent: Int,
+    val looping: Boolean,
+    val sessionId: Long,
+) {
+    companion object {
+        fun disabled(): NativeSoundpadSnapshot = NativeSoundpadSnapshot(
+            active = false,
+            pcmPath = "",
+            sampleRate = 48_000,
+            mixPercent = 0,
+            gainPercent = 100,
+            looping = false,
+            sessionId = 0L,
+        )
+    }
+}
+
 object NativeAudioBridge {
     private const val CONFIG_CACHE_WINDOW_MS = 800L
+    private const val SOUNDPAD_CACHE_WINDOW_MS = 160L
 
     private val nativeLoaded = AtomicBoolean(false)
     private val lastEvents = Collections.synchronizedMap(mutableMapOf<String, Long>())
@@ -38,6 +61,12 @@ object NativeAudioBridge {
 
     @Volatile
     private var cachedConfig: VoiceConfig = VoiceConfig()
+
+    @Volatile
+    private var lastSoundpadLoadedAt: Long = 0L
+
+    @Volatile
+    private var cachedSoundpad: NativeSoundpadSnapshot = NativeSoundpadSnapshot.disabled()
 
     fun attachToProcess(packageName: String) {
         processPackageName = packageName
@@ -64,6 +93,39 @@ object NativeAudioBridge {
             effectStrength = config.effectStrength,
             micGainPercent = config.micGainPercent,
         )
+    }
+
+    @JvmStatic
+    fun soundpadSnapshotForNative(): NativeSoundpadSnapshot {
+        val now = System.currentTimeMillis()
+        if (now - lastSoundpadLoadedAt < SOUNDPAD_CACHE_WINDOW_MS) {
+            return cachedSoundpad
+        }
+
+        synchronized(this) {
+            val refreshedNow = System.currentTimeMillis()
+            if (refreshedNow - lastSoundpadLoadedAt < SOUNDPAD_CACHE_WINDOW_MS) {
+                return cachedSoundpad
+            }
+
+            val snapshot = SoundpadClient.snapshot()
+            val activeSlot = snapshot.activeSlot
+            cachedSoundpad = if (activeSlot == null) {
+                NativeSoundpadSnapshot.disabled()
+            } else {
+                NativeSoundpadSnapshot(
+                    active = true,
+                    pcmPath = activeSlot.pcmPath,
+                    sampleRate = activeSlot.sampleRate,
+                    mixPercent = snapshot.playback.mixPercent,
+                    gainPercent = activeSlot.gainPercent,
+                    looping = snapshot.playback.looping,
+                    sessionId = snapshot.playback.sessionId.takeIf { it > 0L } ?: activeSlot.id.hashCode().toLong(),
+                )
+            }
+            lastSoundpadLoadedAt = refreshedNow
+            return cachedSoundpad
+        }
     }
 
     @JvmStatic
