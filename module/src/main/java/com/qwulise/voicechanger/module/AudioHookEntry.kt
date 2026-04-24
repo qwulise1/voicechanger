@@ -40,11 +40,26 @@ class AudioHookEntry : IXposedHookLoadPackage {
             XposedBridge.log("qwulivoice: native hook skipped for $packageName")
         }
 
-        XposedBridge.log("qwulivoice: installing safe AudioRecord.read hook in $packageName")
-        XposedBridge.hookAllConstructors(AudioRecord::class.java, createAudioRecordConstructorHook(packageName))
-        XposedBridge.hookAllMethods(AudioRecord::class.java, "startRecording", createStartRecordingHook(packageName))
-        XposedBridge.hookAllMethods(AudioRecord::class.java, "read", createAudioReadHook(packageName))
-        installWebRtcHooks(packageName, lpparam.classLoader)
+        if (isTelegramStylePackage(packageName)) {
+            val scopedInstalled = installTelegramScopedHooks(packageName, lpparam.classLoader)
+            XposedBridge.log("qwulivoice: installing telegram-style AudioRecord.read hook in $packageName")
+            XposedBridge.hookAllMethods(
+                AudioRecord::class.java,
+                "read",
+                createAudioReadHook(
+                    packageName = packageName,
+                    trackedOnly = true,
+                    byteBufferOnly = true,
+                    allowUntrackedFallback = !scopedInstalled,
+                ),
+            )
+        } else {
+            XposedBridge.log("qwulivoice: installing safe AudioRecord.read hook in $packageName")
+            XposedBridge.hookAllConstructors(AudioRecord::class.java, createAudioRecordConstructorHook(packageName))
+            XposedBridge.hookAllMethods(AudioRecord::class.java, "startRecording", createStartRecordingHook(packageName))
+            XposedBridge.hookAllMethods(AudioRecord::class.java, "read", createAudioReadHook(packageName))
+            installWebRtcHooks(packageName, lpparam.classLoader)
+        }
     }
 
     private fun createAudioRecordConstructorHook(packageName: String) = object : XC_MethodHook() {
@@ -65,17 +80,34 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
     }
 
-    private fun createAudioReadHook(packageName: String) = object : XC_MethodHook() {
+    private fun createAudioReadHook(
+        packageName: String,
+        trackedOnly: Boolean = false,
+        byteBufferOnly: Boolean = false,
+        allowUntrackedFallback: Boolean = true,
+    ) = object : XC_MethodHook() {
         override fun afterHookedMethod(param: MethodHookParam) {
             runCatching {
-                processReadResult(packageName, param)
+                processReadResult(
+                    packageName = packageName,
+                    param = param,
+                    trackedOnly = trackedOnly,
+                    byteBufferOnly = byteBufferOnly,
+                    allowUntrackedFallback = allowUntrackedFallback,
+                )
             }.onFailure {
                 XposedBridge.log("qwulivoice: AudioRecord.read hook failed in $packageName: $it")
             }
         }
     }
 
-    private fun processReadResult(packageName: String, param: XC_MethodHook.MethodHookParam) {
+    private fun processReadResult(
+        packageName: String,
+        param: XC_MethodHook.MethodHookParam,
+        trackedOnly: Boolean = false,
+        byteBufferOnly: Boolean = false,
+        allowUntrackedFallback: Boolean = true,
+    ) {
         val readCount = param.result as? Int ?: return
         if (readCount <= 0) {
             return
@@ -95,6 +127,15 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
 
         val audioRecord = param.thisObject as? AudioRecord ?: return
+        if (trackedOnly) {
+            val tracked = HookBridge.classifyTrackedRecorder(audioRecord)
+            if (tracked == null && !allowUntrackedFallback) {
+                return
+            }
+            if (byteBufferOnly && param.args.firstOrNull() !is ByteBuffer) {
+                return
+            }
+        }
         val session = HookBridge.registerAudioRecord(audioRecord, packageName)
         val sampleRate = audioRecord.sampleRate.takeIf { it > 0 } ?: session.sampleRate ?: 48_000
         val channelCount = resolveChannelCount(audioRecord, session)
@@ -236,11 +277,131 @@ class AudioHookEntry : IXposedHookLoadPackage {
         return 1
     }
 
+    private fun installTelegramScopedHooks(packageName: String, classLoader: ClassLoader?): Boolean {
+        var installedAny = false
+        val mediaControllerClass = runCatching {
+            XposedHelpers.findClass("org.telegram.messenger.MediaController", classLoader)
+        }.getOrNull()
+        if (mediaControllerClass != null) {
+            mediaControllerClass.declaredMethods
+                .filter { method ->
+                    method.name.startsWith("lambda\$startRecording$") ||
+                        method.name.startsWith("lambda\$toggleRecordingPause$") ||
+                        method.name == "startRecording"
+                }
+                .forEach { method ->
+                    installedAny = true
+                    XposedBridge.hookMethod(method, createTelegramNoteRecorderHook(packageName))
+                }
+            mediaControllerClass.declaredMethods
+                .filter { it.name == "stopRecording" }
+                .forEach { method ->
+                    installedAny = true
+                    XposedBridge.hookMethod(method, createTelegramNoteStopHook(packageName))
+                }
+        }
+
+        WEB_RTC_RECORD_CLASSES.forEach { className ->
+            val clazz = runCatching { XposedHelpers.findClass(className, classLoader) }.getOrNull() ?: return@forEach
+            clazz.declaredMethods
+                .filter { it.name == "initRecording" }
+                .forEach { method ->
+                    installedAny = true
+                    XposedBridge.hookMethod(method, createWebRtcInitHook(packageName, className))
+                }
+            clazz.declaredMethods
+                .filter { it.name == "stopRecording" || it.name == "onDestroy" }
+                .forEach { method ->
+                    installedAny = true
+                    XposedBridge.hookMethod(method, createWebRtcStopHook(packageName, className))
+                }
+        }
+        return installedAny
+    }
+
+    private fun createTelegramNoteRecorderHook(packageName: String) = object : XC_MethodHook() {
+        override fun afterHookedMethod(param: MethodHookParam) {
+            val owner = param.thisObject ?: return
+            val audioRecord = runCatching {
+                XposedHelpers.getObjectField(owner, "audioRecorder") as? AudioRecord
+            }.getOrNull()
+            HookBridge.registerNoteRecorder(audioRecord)
+            if (audioRecord != null) {
+                DiagnosticsClient.reportEvent(
+                    packageName = packageName,
+                    source = "Telegram.noteRecorder",
+                    detail = "Registered note recorder=${audioRecord.hashCode()}",
+                    rateKey = "$packageName|Telegram.noteRecorder",
+                    minIntervalMs = 15_000L,
+                )
+            }
+        }
+    }
+
+    private fun createTelegramNoteStopHook(packageName: String) = object : XC_MethodHook() {
+        override fun afterHookedMethod(param: MethodHookParam) {
+            HookBridge.clearNoteRecorders()
+            DiagnosticsClient.reportEvent(
+                packageName = packageName,
+                source = "Telegram.noteRecorder",
+                detail = "Cleared note recorder set.",
+                rateKey = "$packageName|Telegram.noteRecorder|clear",
+                minIntervalMs = 15_000L,
+            )
+        }
+    }
+
+    private fun createWebRtcInitHook(packageName: String, className: String) = object : XC_MethodHook() {
+        override fun afterHookedMethod(param: MethodHookParam) {
+            val result = param.result
+            val success = (result as? Int)?.let { it >= 0 } ?: true
+            if (!success) {
+                return
+            }
+            val audioRecord = runCatching {
+                XposedHelpers.getObjectField(param.thisObject, "audioRecord") as? AudioRecord
+            }.getOrNull()
+            HookBridge.registerCallRecorder(audioRecord)
+            if (audioRecord != null) {
+                DiagnosticsClient.reportEvent(
+                    packageName = packageName,
+                    source = "WebRtc.initRecording",
+                    detail = "Registered call recorder=${audioRecord.hashCode()} class=${className.substringAfterLast('.')}",
+                    rateKey = "$packageName|$className|initRecording",
+                    minIntervalMs = 10_000L,
+                )
+            }
+        }
+    }
+
+    private fun createWebRtcStopHook(packageName: String, className: String) = object : XC_MethodHook() {
+        override fun afterHookedMethod(param: MethodHookParam) {
+            HookBridge.clearCallRecorders()
+            DiagnosticsClient.reportEvent(
+                packageName = packageName,
+                source = "WebRtc.stopRecording",
+                detail = "Cleared call recorder set for ${className.substringAfterLast('.')}",
+                rateKey = "$packageName|$className|stopRecording",
+                minIntervalMs = 10_000L,
+            )
+        }
+    }
+
     private fun installWebRtcHooks(packageName: String, classLoader: ClassLoader?) {
         WEB_RTC_RECORD_CLASSES.forEach { className ->
             val clazz = runCatching { XposedHelpers.findClass(className, classLoader) }.getOrNull() ?: return@forEach
             XposedBridge.log("qwulivoice: installing WebRTC nativeDataIsRecorded hook in $packageName for $className")
             XposedBridge.hookAllMethods(clazz, "nativeDataIsRecorded", createWebRtcRecordHook(packageName, className))
+            clazz.declaredMethods
+                .filter { it.name == "initRecording" }
+                .forEach { method ->
+                    XposedBridge.hookMethod(method, createWebRtcInitHook(packageName, className))
+                }
+            clazz.declaredMethods
+                .filter { it.name == "stopRecording" || it.name == "onDestroy" }
+                .forEach { method ->
+                    XposedBridge.hookMethod(method, createWebRtcStopHook(packageName, className))
+                }
         }
     }
 
@@ -337,13 +498,15 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }.getOrNull()?.takeIf { it > 0 }
         }
 
-    private fun shouldAttachNative(packageName: String): Boolean =
-        !packageName.startsWith("org.telegram.messenger") &&
-            !packageName.startsWith("com.exteragram")
-
-    private fun shouldRestrictToMainProcess(packageName: String): Boolean =
+    private fun isTelegramStylePackage(packageName: String): Boolean =
         packageName.startsWith("org.telegram.messenger") ||
             packageName.startsWith("com.exteragram")
+
+    private fun shouldAttachNative(packageName: String): Boolean =
+        !isTelegramStylePackage(packageName)
+
+    private fun shouldRestrictToMainProcess(packageName: String): Boolean =
+        isTelegramStylePackage(packageName)
 
     private object ConfigClient {
         private const val CACHE_WINDOW_MS = 800L

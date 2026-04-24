@@ -481,13 +481,21 @@ object PcmVoiceProcessor {
             return
         }
 
-        val safeByteCount = byteCount - (byteCount % 2)
+        val startPosition = buffer.position().coerceAtLeast(0)
+        val availableBytes = if (buffer.hasArray()) {
+            buffer.array().size - (buffer.arrayOffset() + startPosition)
+        } else {
+            buffer.capacity() - startPosition
+        }.coerceAtLeast(0)
+        val safeByteCount = byteCount
+            .coerceAtMost(availableBytes)
+            .let { it - (it % 2) }
         if (safeByteCount <= 0) {
             return
         }
 
         if (buffer.hasArray()) {
-            val offset = buffer.arrayOffset()
+            val offset = buffer.arrayOffset() + startPosition
             processByteArrayPcm16(buffer.array(), offset, safeByteCount, sampleRate, config, state)
             return
         }
@@ -495,14 +503,15 @@ object PcmVoiceProcessor {
         val duplicate = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         val sampleCount = safeByteCount / 2
         ensureScratch(sampleCount)
-        duplicate.position(0)
+        duplicate.position(startPosition)
+        duplicate.limit(startPosition + safeByteCount)
         repeat(sampleCount) { index ->
             floatBuffer[index] = duplicate.short / 32768f
         }
         repeat(sampleCount) { index ->
             floatBuffer[index] = processSample(floatBuffer[index], sampleRate, config, state)
         }
-        duplicate.position(0)
+        duplicate.position(startPosition)
         repeat(sampleCount) { index ->
             val packed = (floatBuffer[index] * Short.MAX_VALUE)
                 .roundToInt()

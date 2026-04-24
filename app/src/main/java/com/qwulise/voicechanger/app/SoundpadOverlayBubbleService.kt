@@ -195,7 +195,7 @@ class SoundpadOverlayBubbleService : Service() {
         }
 
         val overlayOpacity = settings.overlayOpacityPercent.coerceIn(35, 100) / 100f
-        val overlayScale = settings.overlaySizePercent.coerceIn(70, 160) / 100f
+        val overlayScale = settings.overlaySizePercent.coerceIn(20, 160) / 100f
         val avatarSize = (dp(56) * overlayScale).roundToInt().coerceAtLeast(dp(40))
         val bubblePadding = (dp(6) * overlayScale).roundToInt().coerceAtLeast(dp(4))
         val bubbleRadius = (dp(24) * overlayScale).roundToInt().toFloat()

@@ -120,7 +120,7 @@ object UiSettingsStore {
             accentPresetId = prefs.getString(KEY_ACCENT_PRESET, UiAccentPreset.GOLD.id).orEmpty(),
             useMonet = prefs.getBoolean(KEY_USE_MONET, false),
             overlayOpacityPercent = prefs.getInt(KEY_OVERLAY_OPACITY, 82).coerceIn(35, 100),
-            overlaySizePercent = prefs.getInt(KEY_OVERLAY_SIZE, 100).coerceIn(70, 160),
+            overlaySizePercent = prefs.getInt(KEY_OVERLAY_SIZE, 100).coerceIn(20, 160),
         )
     }
 
@@ -129,7 +129,7 @@ object UiSettingsStore {
             themeMode = UiThemeMode.fromId(settings.themeMode.id),
             accentPresetId = settings.accentPreset.id,
             overlayOpacityPercent = settings.overlayOpacityPercent.coerceIn(35, 100),
-            overlaySizePercent = settings.overlaySizePercent.coerceIn(70, 160),
+            overlaySizePercent = settings.overlaySizePercent.coerceIn(20, 160),
         )
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()

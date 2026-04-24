@@ -17,6 +17,8 @@ object HookBridge {
     private val webRtcStates = Collections.synchronizedMap(WeakHashMap<Any, VoiceProcessingState>())
     private val webRtcSessions = Collections.synchronizedMap(WeakHashMap<Any, WebRtcSession>())
     private val recentBuffers = Collections.synchronizedMap(WeakHashMap<ByteBuffer, ProcessedBufferStamp>())
+    private val noteRecorderKeys = Collections.synchronizedSet(mutableSetOf<Int>())
+    private val callRecorderKeys = Collections.synchronizedSet(mutableSetOf<Int>())
 
     fun activeTargets(): List<String> = listOf(
         "Safe-mode AudioRecord.read(...) Java hook",
@@ -99,6 +101,33 @@ object HookBridge {
         }
         synchronized(sessions) {
             sessions.remove(audioRecord)
+        }
+    }
+
+    fun registerNoteRecorder(audioRecord: AudioRecord?) {
+        audioRecord ?: return
+        noteRecorderKeys += audioRecord.hashCode()
+    }
+
+    fun registerCallRecorder(audioRecord: AudioRecord?) {
+        audioRecord ?: return
+        callRecorderKeys += audioRecord.hashCode()
+    }
+
+    fun clearNoteRecorders() {
+        noteRecorderKeys.clear()
+    }
+
+    fun clearCallRecorders() {
+        callRecorderKeys.clear()
+    }
+
+    fun classifyTrackedRecorder(audioRecord: AudioRecord): RecorderKind? {
+        val key = audioRecord.hashCode()
+        return when {
+            key in noteRecorderKeys -> RecorderKind.NOTE
+            key in callRecorderKeys -> RecorderKind.CALL
+            else -> null
         }
     }
 
@@ -227,3 +256,8 @@ private data class ProcessedBufferStamp(
     val source: String,
     val timestampMs: Long,
 )
+
+enum class RecorderKind {
+    NOTE,
+    CALL,
+}

@@ -22,7 +22,10 @@ object SoundpadImporter {
     fun importIntoSlot(context: Context, uri: Uri, slot: SoundpadSlot): SoundpadSlot {
         val tempFile = File.createTempFile("soundpad-${slot.id}-", ".pcm", context.cacheDir)
         return try {
-            val decoded = decodeToMonoPcm(context, uri, tempFile)
+            val decoded = normalizePcmToTargetRate(
+                outputFile = tempFile,
+                decoded = decodeToMonoPcm(context, uri, tempFile),
+            )
             RootConfigPublisher.publishSoundpadClip(context.packageName, slot.id, tempFile)
             val rawTitle = queryDisplayName(context, uri)
                 ?.substringBeforeLast('.')
@@ -41,6 +44,52 @@ object SoundpadImporter {
         } finally {
             tempFile.delete()
         }
+    }
+
+    private fun normalizePcmToTargetRate(outputFile: File, decoded: DecodedAudio): DecodedAudio {
+        if (decoded.sampleRate == TARGET_SAMPLE_RATE || decoded.frameCount <= 0 || !outputFile.isFile) {
+            return decoded
+        }
+        val sourceSamples = runCatching {
+            val shortBuffer = ByteBuffer.wrap(outputFile.readBytes())
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .asShortBuffer()
+            ShortArray(shortBuffer.remaining()).also(shortBuffer::get)
+        }.getOrDefault(ShortArray(0))
+        if (sourceSamples.isEmpty()) {
+            return decoded
+        }
+
+        val targetFrameCount = ((sourceSamples.size.toDouble() * TARGET_SAMPLE_RATE) / decoded.sampleRate.coerceAtLeast(8_000).toDouble())
+            .roundToInt()
+            .coerceAtLeast(1)
+        val resampled = ShortArray(targetFrameCount)
+        if (sourceSamples.size == 1) {
+            java.util.Arrays.fill(resampled, sourceSamples[0])
+        } else {
+            val step = (sourceSamples.size - 1).toDouble() / (targetFrameCount - 1).coerceAtLeast(1).toDouble()
+            repeat(targetFrameCount) { index ->
+                val sourceIndex = index * step
+                val base = sourceIndex.toInt().coerceIn(0, sourceSamples.lastIndex)
+                val next = (base + 1).coerceAtMost(sourceSamples.lastIndex)
+                val fraction = (sourceIndex - base).toFloat().coerceIn(0f, 1f)
+                val first = sourceSamples[base].toInt()
+                val second = sourceSamples[next].toInt()
+                resampled[index] = (first + ((second - first) * fraction))
+                    .roundToInt()
+                    .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                    .toShort()
+            }
+        }
+
+        val bytes = ByteBuffer.allocate(resampled.size * 2)
+            .order(ByteOrder.LITTLE_ENDIAN)
+        resampled.forEach(bytes::putShort)
+        outputFile.writeBytes(bytes.array())
+        return DecodedAudio(
+            sampleRate = TARGET_SAMPLE_RATE,
+            frameCount = resampled.size,
+        )
     }
 
     private fun decodeToMonoPcm(context: Context, uri: Uri, outputFile: File): DecodedAudio {
@@ -254,4 +303,5 @@ object SoundpadImporter {
     }
 
     private const val CODEC_TIMEOUT_US = 10_000L
+    private const val TARGET_SAMPLE_RATE = 48_000
 }

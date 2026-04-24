@@ -159,12 +159,24 @@ object SoundpadMixer {
         if (!runtime.active || byteCount < 2) {
             return
         }
+        val startPosition = buffer.position().coerceAtLeast(0)
+        val availableBytes = if (buffer.hasArray()) {
+            buffer.array().size - (buffer.arrayOffset() + startPosition)
+        } else {
+            buffer.capacity() - startPosition
+        }.coerceAtLeast(0)
+        val safeByteCount = byteCount
+            .coerceAtMost(availableBytes)
+            .let { it - (it % 2) }
+        if (safeByteCount < 2) {
+            return
+        }
         if (buffer.hasArray()) {
-            val offset = buffer.arrayOffset()
+            val offset = buffer.arrayOffset() + startPosition
             mixIntoByteArrayPcm16(
                 buffer = buffer.array(),
                 offsetBytes = offset,
-                byteCount = byteCount,
+                byteCount = safeByteCount,
                 outputSampleRate = outputSampleRate,
                 channelCount = channelCount,
                 state = state,
@@ -173,9 +185,10 @@ object SoundpadMixer {
             return
         }
         val duplicate = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
-        val sampleCount = (byteCount - (byteCount % 2)) / 2
+        val sampleCount = safeByteCount / 2
         val channels = channelCount.coerceAtLeast(1)
-        duplicate.position(0)
+        duplicate.position(startPosition)
+        duplicate.limit(startPosition + safeByteCount)
         var sampleIndex = 0
         while (sampleIndex < sampleCount) {
             val frameGain = nextSample(outputSampleRate, runtime)
