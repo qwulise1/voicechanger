@@ -81,6 +81,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var themeModeFlow: FlowLayout
     private lateinit var accentFlow: FlowLayout
     private lateinit var monetSwitch: PillSwitch
+    private lateinit var overlayOpacityValue: TextView
+    private lateinit var overlayOpacitySlider: GlassSlider
     private lateinit var logsStatusText: TextView
     private lateinit var logsColumn: LinearLayout
 
@@ -190,7 +192,12 @@ class MainActivity : AppCompatActivity() {
         setContentView(root)
 
         loadState()
-        applyStartPageFromIntent(intent, animated = false)
+        val restoredPage = savedInstanceState?.getInt(EXTRA_START_PAGE, -1) ?: -1
+        if (restoredPage in 0 until Page.entries.size) {
+            switchPage(restoredPage, animated = false)
+        } else {
+            applyStartPageFromIntent(intent, animated = false)
+        }
     }
 
     override fun onResume() {
@@ -216,6 +223,11 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt(EXTRA_START_PAGE, currentPage.ordinal)
+        super.onSaveInstanceState(outState)
+    }
+
     private fun loadState() {
         suppressUiCallbacks = true
         val config = runCatching { ModuleConfigClient.load(this) }
@@ -237,6 +249,7 @@ class MainActivity : AppCompatActivity() {
         soundpadMixSlider.progress = soundpadPlayback.mixPercent
         soundpadLoopSwitch.checked = soundpadPlayback.looping
         monetSwitch.checked = uiSettings.useMonet
+        overlayOpacitySlider.progress = uiSettings.overlayOpacityPercent
         renderModeChips()
         renderThemeSelectors()
         renderAll("Готово. Все основные штуки под рукой.")
@@ -630,6 +643,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         })
+        addView(settingBlock("Overlay", "Прозрачность плавающей кнопки soundpad и панели выбора").apply {
+            overlayOpacityValue = body("").apply {
+                setTextColor(palette.primaryText)
+                setPadding(0, 0, 0, dp(10))
+            }
+            addView(overlayOpacityValue)
+            overlayOpacitySlider = GlassSlider(this@MainActivity).apply {
+                max = 100
+                progress = uiSettings.overlayOpacityPercent
+                setColors(palette.accentAlt, palette.sliderTrack, palette.sliderThumb)
+                onProgressChange = { onOverlayOpacityChanged() }
+            }
+            addView(overlayOpacitySlider)
+        })
     }
 
     private fun logsCard(): LinearLayout = LinearLayout(this).apply {
@@ -658,7 +685,7 @@ class MainActivity : AppCompatActivity() {
                 },
             )
         })
-        logsStatusText = body("Подтягиваю последние события хука и provider...").apply {
+        logsStatusText = body("Подтягиваю последние события хука и root-логов...").apply {
             setTextColor(palette.secondaryText)
             setPadding(0, dp(8), 0, dp(14))
         }
@@ -825,6 +852,7 @@ class MainActivity : AppCompatActivity() {
                 }
             })
         }
+        overlayOpacityValue.text = "Непрозрачность overlay: ${uiSettings.overlayOpacityPercent}%"
     }
 
     private fun renderValueLabels() {
@@ -873,7 +901,7 @@ class MainActivity : AppCompatActivity() {
             append(
                 when {
                     !powerSwitch.checked -> "off"
-                    activePad == null -> "ожидает запуск"
+                    !hasReadySoundpads() -> "нет падов"
                     SoundpadOverlayBubbleService.canDraw(this@MainActivity) -> "активен"
                     else -> "нужен доступ"
                 },
@@ -890,8 +918,8 @@ class MainActivity : AppCompatActivity() {
         }
         soundpadOverlayText.text = when {
             !powerSwitch.checked -> "Главный тумблер выключен, поэтому soundpad тоже стоит."
-            activePad == null -> "Оверлей-кнопка появится, когда запустишь какой-нибудь пад."
-            SoundpadOverlayBubbleService.canDraw(this) -> "Плавающая кнопка с авой уже должна висеть поверх приложений."
+            !hasReadySoundpads() -> "Добавь хотя бы один готовый пад, и overlay-кнопка появится сама."
+            SoundpadOverlayBubbleService.canDraw(this) -> "Тап по плавающей кнопке открывает только список готовых падов: запуск и стоп прямо поверх приложения."
             else -> "Для плавающей кнопки выдай доступ к показу поверх других приложений."
         }
         soundpadMixValue.text = "Громкость падов: ${soundpadMixSlider.progress}%"
@@ -1018,9 +1046,20 @@ class MainActivity : AppCompatActivity() {
     private fun renderLogs() {
         logsColumn.removeAllViews()
         if (logsEvents.isEmpty()) {
-            logsColumn.addView(body("Логи пока пустые. Сначала попробуй включить обработку или записать что-нибудь.").apply {
-                setTextColor(palette.secondaryText)
-            })
+            logsColumn.addView(
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    background = rounded(palette.surface.withAlpha(120), 20, palette.cardStroke)
+                    setPadding(dp(18), dp(18), dp(18), dp(18))
+                    addView(title("Пока пусто", 18f))
+                    addView(body("Сначала включи обработку, попробуй запись или открой проблемное приложение, и события сами появятся здесь.").apply {
+                        setTextColor(palette.secondaryText)
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(8), 0, 0)
+                    })
+                },
+            )
             return
         }
         logsEvents.take(MAX_LOG_LINES).forEachIndexed { index, event ->
@@ -1029,14 +1068,34 @@ class MainActivity : AppCompatActivity() {
                     orientation = LinearLayout.VERTICAL
                     background = rounded(palette.surface.withAlpha(122), 18, palette.cardStroke)
                     setPadding(dp(14), dp(12), dp(14), dp(12))
-                    if (index > 0) {
-                        (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(8)
-                    }
+                    addView(LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        addView(chip(
+                            DateFormat.format("HH:mm:ss", Date(event.timestampMs)).toString(),
+                            palette.heroChipBackground.withAlpha(124),
+                            palette.heroChipText,
+                        ))
+                        addView(
+                            chip(
+                                event.packageName.substringAfterLast('.'),
+                                palette.surface.withAlpha(120),
+                                palette.primaryText,
+                            ),
+                            LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT,
+                            ).apply {
+                                leftMargin = dp(8)
+                            },
+                        )
+                    })
                     addView(TextView(this@MainActivity).apply {
-                        text = "${DateFormat.format("HH:mm:ss", Date(event.timestampMs))} • ${event.source}"
+                        text = event.source
                         setTextColor(palette.titleText)
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                         setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
+                        setPadding(0, dp(10), 0, 0)
                     })
                     addView(TextView(this@MainActivity).apply {
                         text = event.detail
@@ -1251,13 +1310,29 @@ class MainActivity : AppCompatActivity() {
             return
         }
         uiSettings = UiSettingsStore.write(this, newSettings)
+        intent.putExtra(EXTRA_START_PAGE, currentPage.ordinal)
         recreate()
+    }
+
+    private fun onOverlayOpacityChanged() {
+        if (suppressUiCallbacks) {
+            return
+        }
+        val updated = UiSettingsStore.write(
+            this,
+            uiSettings.copy(overlayOpacityPercent = overlayOpacitySlider.progress),
+        )
+        if (updated != uiSettings) {
+            uiSettings = updated
+        }
+        overlayOpacityValue.text = "Непрозрачность overlay: ${uiSettings.overlayOpacityPercent}%"
+        syncOverlayBubble(userInitiated = false)
     }
 
     private fun syncOverlayBubble(userInitiated: Boolean) {
         SoundpadOverlayBubbleService.sync(
             context = this,
-            show = powerSwitch.checked && soundpadPlayback.playing,
+            show = powerSwitch.checked && hasReadySoundpads(),
             userInitiated = userInitiated,
         )
     }
@@ -1355,6 +1430,7 @@ class MainActivity : AppCompatActivity() {
         }
         flipper.displayedChild = bounded
         currentPage = targetPage
+        intent.putExtra(EXTRA_START_PAGE, currentPage.ordinal)
         renderNavBar(animated = true)
         if (currentPage == Page.SETTINGS && logsEvents.isEmpty()) {
             refreshLogs()
@@ -1402,13 +1478,16 @@ class MainActivity : AppCompatActivity() {
         soundpadLibrary.slot(soundpadPlayback.activeSlotId)
             ?.takeIf { powerSwitch.checked && soundpadPlayback.playing && it.isReady }
 
+    private fun hasReadySoundpads(): Boolean =
+        soundpadLibrary.sanitized().slots.any { it.isReady }
+
     private fun pageInAnimation(forward: Boolean): Animation =
         AnimationSet(true).apply {
-            addAnimation(AlphaAnimation(0.72f, 1f))
+            addAnimation(AlphaAnimation(0.58f, 1f))
             addAnimation(
                 TranslateAnimation(
                     Animation.RELATIVE_TO_SELF,
-                    if (forward) 0.18f else -0.18f,
+                    if (forward) 1f else -1f,
                     Animation.RELATIVE_TO_SELF,
                     0f,
                     Animation.RELATIVE_TO_SELF,
@@ -1417,26 +1496,26 @@ class MainActivity : AppCompatActivity() {
                     0f,
                 ),
             )
-            duration = 260L
+            duration = 320L
             interpolator = AccelerateDecelerateInterpolator()
         }
 
     private fun pageOutAnimation(forward: Boolean): Animation =
         AnimationSet(true).apply {
-            addAnimation(AlphaAnimation(1f, 0.78f))
+            addAnimation(AlphaAnimation(1f, 0.86f))
             addAnimation(
                 TranslateAnimation(
                     Animation.RELATIVE_TO_SELF,
                     0f,
                     Animation.RELATIVE_TO_SELF,
-                    if (forward) -0.10f else 0.10f,
+                    if (forward) -1f else 1f,
                     Animation.RELATIVE_TO_SELF,
                     0f,
                     Animation.RELATIVE_TO_SELF,
                     0f,
                 ),
             )
-            duration = 220L
+            duration = 320L
             interpolator = AccelerateDecelerateInterpolator()
         }
 
@@ -1656,24 +1735,29 @@ class MainActivity : AppCompatActivity() {
         val fallbackAccent = if (dark) preset.accentDark else preset.accentLight
         val fallbackAlt = if (dark) preset.altDark else preset.altLight
         if (uiSettings.useMonet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return AccentBundle(
-                accent = resources.getColor(
-                    if (dark) android.R.color.system_accent1_300 else android.R.color.system_accent1_600,
-                    theme,
-                ),
-                alt = resources.getColor(
-                    if (dark) android.R.color.system_accent2_300 else android.R.color.system_accent2_600,
-                    theme,
-                ),
-                hero = resources.getColor(
-                    if (dark) android.R.color.system_accent3_300 else android.R.color.system_accent3_500,
-                    theme,
-                ),
-                warning = resources.getColor(
-                    if (dark) android.R.color.system_accent1_200 else android.R.color.system_accent1_700,
-                    theme,
-                ),
-            )
+            val monetBundle = runCatching {
+                AccentBundle(
+                    accent = resources.getColor(
+                        if (dark) android.R.color.system_accent1_300 else android.R.color.system_accent1_600,
+                        theme,
+                    ),
+                    alt = resources.getColor(
+                        if (dark) android.R.color.system_accent2_300 else android.R.color.system_accent2_600,
+                        theme,
+                    ),
+                    hero = resources.getColor(
+                        if (dark) android.R.color.system_accent3_300 else android.R.color.system_accent3_500,
+                        theme,
+                    ),
+                    warning = resources.getColor(
+                        if (dark) android.R.color.system_accent1_200 else android.R.color.system_accent1_700,
+                        theme,
+                    ),
+                )
+            }.getOrNull()
+            if (monetBundle != null) {
+                return monetBundle
+            }
         }
         return AccentBundle(
             accent = fallbackAccent,
@@ -1933,6 +2017,6 @@ class MainActivity : AppCompatActivity() {
 
         private const val AUTO_SAVE_DELAY_MS = 420L
         private const val SOUNDPAD_SAVE_DELAY_MS = 240L
-        private const val MAX_LOG_LINES = 24
+        private const val MAX_LOG_LINES = 36
     }
 }

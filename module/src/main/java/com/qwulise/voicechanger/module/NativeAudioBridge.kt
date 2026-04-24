@@ -1,9 +1,7 @@
 package com.qwulise.voicechanger.module
 
-import android.os.Bundle
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.VoiceConfig
-import com.qwulise.voicechanger.core.VoiceConfigContract
 import de.robv.android.xposed.XposedBridge
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -95,29 +93,12 @@ object NativeAudioBridge {
             source = source,
             detail = detail,
         )
-        val context = resolveContext()
         runCatching {
-            val delivered = if (context == null) {
-                ModuleFileBridge.appendEvent(event)
-            } else {
-                runCatching {
-                    requireNotNull(context.contentResolver.call(
-                        VoiceConfigContract.CONTENT_URI,
-                        VoiceConfigContract.METHOD_APPEND_LOG,
-                        null,
-                        Bundle().apply {
-                            putString(VoiceConfigContract.KEY_LOG_PACKAGE_NAME, packageName)
-                            putString(VoiceConfigContract.KEY_LOG_SOURCE, source)
-                            putString(VoiceConfigContract.KEY_LOG_DETAIL, detail)
-                            putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, now)
-                        },
-                    )) { "provider returned null append result" }
-                }.isSuccess || ModuleFileBridge.appendEvent(event)
-            }
+            val delivered = ModuleFileBridge.appendEvent(event)
             if (delivered) {
                 synchronized(lastEvents) { lastEvents[rateKey] = now }
             } else {
-                XposedBridge.log("qwulivoice: native diagnostics file/provider unavailable")
+                XposedBridge.log("qwulivoice: native diagnostics file unavailable")
             }
         }.onFailure {
             XposedBridge.log("qwulivoice: native diagnostics report failed: $it")
@@ -139,28 +120,7 @@ object NativeAudioBridge {
                 return cachedConfig
             }
 
-            val rootConfig = ModuleFileBridge.readConfig()
-            val context = resolveContext()
-            if (context == null) {
-                cachedConfig = rootConfig ?: cachedConfig
-                lastConfigLoadedAt = refreshedNow
-                return cachedConfig
-            }
-
-            cachedConfig = try {
-                VoiceConfig.fromBundle(
-                    requireNotNull(context.contentResolver.call(
-                        VoiceConfigContract.CONTENT_URI,
-                        VoiceConfigContract.METHOD_GET_CONFIG,
-                        null,
-                        null,
-                    )) { "provider returned null config" },
-                )
-            } catch (error: Throwable) {
-                XposedBridge.log("qwulivoice: native config fetch failed: $error")
-                rootConfig ?: cachedConfig
-            }
-
+            cachedConfig = ModuleFileBridge.readConfig() ?: cachedConfig
             lastConfigLoadedAt = refreshedNow
             return cachedConfig
         }
@@ -170,10 +130,6 @@ object NativeAudioBridge {
         if (nativeLoaded.compareAndSet(false, true)) {
             System.loadLibrary("voicechanger-native")
         }
-    }
-
-    private fun resolveContext(): android.content.Context? {
-        return ProcessContextResolver.resolve()
     }
 
     @JvmStatic

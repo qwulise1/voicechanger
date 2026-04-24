@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.IBinder
@@ -18,37 +19,53 @@ import android.view.ViewOutlineProvider
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import com.qwulise.voicechanger.core.SoundpadPlayback
+import com.qwulise.voicechanger.core.SoundpadSlot
 import kotlin.math.abs
 
 class SoundpadOverlayBubbleService : Service() {
     private var windowManager: WindowManager? = null
-    private var bubbleView: View? = null
+    private var rootView: LinearLayout? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var panelView: LinearLayout? = null
+    private var padsColumn: LinearLayout? = null
+    private var bubbleView: FrameLayout? = null
+    private var panelVisible = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        ensureBubble()
+        ensureOverlay()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        ensureBubble()
+        ensureOverlay()
+        refreshOverlay()
         return START_STICKY
     }
 
     override fun onDestroy() {
-        bubbleView?.let { view ->
+        rootView?.let { view ->
             runCatching { windowManager?.removeView(view) }
         }
+        rootView = null
+        panelView = null
+        padsColumn = null
         bubbleView = null
         layoutParams = null
         windowManager = null
         super.onDestroy()
     }
 
-    private fun ensureBubble() {
-        if (!canDraw(this) || bubbleView != null) {
+    private fun ensureOverlay() {
+        if (!canDraw(this)) {
+            return
+        }
+        if (rootView != null) {
             return
         }
 
@@ -70,16 +87,62 @@ class SoundpadOverlayBubbleService : Service() {
             x = dp(18)
             y = dp(120)
         }
-        val bubble = FrameLayout(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(24).toFloat()
-                setColor(Color.argb(212, 24, 18, 14))
-                setStroke(dp(1), Color.argb(108, 255, 255, 255))
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.END
+        }
+
+        panelView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+        }.also { panel ->
+            panel.addView(TextView(this).apply {
+                text = "Soundpad"
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                setTypeface(typeface, Typeface.BOLD)
+            })
+            panel.addView(TextView(this).apply {
+                text = "Тап по карточке запускает или останавливает конкретный звук."
+                setTextColor(Color.argb(210, 232, 224, 214))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setPadding(0, dp(6), 0, dp(10))
+            })
+            val scroll = ScrollView(this).apply {
+                isVerticalScrollBarEnabled = false
+                overScrollMode = View.OVER_SCROLL_NEVER
             }
+            padsColumn = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+            }
+            scroll.addView(
+                padsColumn,
+                ScrollView.LayoutParams(
+                    ScrollView.LayoutParams.MATCH_PARENT,
+                    ScrollView.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+            panel.addView(
+                scroll,
+                LinearLayout.LayoutParams(dp(230), dp(300)),
+            )
+        }
+        root.addView(
+            panelView,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                bottomMargin = dp(10)
+            },
+        )
+
+        bubbleView = FrameLayout(this).apply {
             clipToOutline = true
             outlineProvider = ViewOutlineProvider.BACKGROUND
-            elevation = dp(12).toFloat()
+            elevation = dp(14).toFloat()
             setPadding(dp(6), dp(6), dp(6), dp(6))
             addView(ImageView(context).apply {
                 setImageResource(resolveAvatarRes())
@@ -91,22 +154,123 @@ class SoundpadOverlayBubbleService : Service() {
                 }
                 clipToOutline = true
                 outlineProvider = ViewOutlineProvider.BACKGROUND
-                layoutParams = FrameLayout.LayoutParams(dp(56), dp(56))
+            }, FrameLayout.LayoutParams(dp(56), dp(56)))
+        }.also { bubble ->
+            bubble.setOnTouchListener(DragClickListener(params) {
+                panelVisible = !panelVisible
+                refreshOverlay()
             })
         }
+        root.addView(bubbleView)
 
-        bubble.setOnTouchListener(DragClickListener(params) {
-            startActivity(
-                Intent(this, MainActivity::class.java).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                    putExtra(MainActivity.EXTRA_START_PAGE, MainActivity.START_PAGE_SOUNDPAD)
+        windowManager?.addView(root, params)
+        rootView = root
+        layoutParams = params
+        refreshOverlay()
+    }
+
+    private fun refreshOverlay() {
+        val root = rootView ?: return
+        val panel = panelView ?: return
+        val bubble = bubbleView ?: return
+        val column = padsColumn ?: return
+        val settings = UiSettingsStore.read(this)
+        val library = ModuleConfigClient.loadSoundpadLibrary(this).sanitized()
+        val playback = ModuleConfigClient.loadSoundpadPlayback(this).sanitized()
+        val readySlots = library.slots.filter { it.isReady }
+        if (readySlots.isEmpty()) {
+            stopSelf()
+            return
+        }
+
+        val alpha = ((settings.overlayOpacityPercent.coerceIn(35, 100) / 100f) * 255f).toInt().coerceIn(80, 255)
+        bubble.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(24).toFloat()
+            setColor(Color.argb(alpha, 24, 18, 14))
+            setStroke(dp(1), Color.argb((alpha * 0.68f).toInt(), 255, 255, 255))
+        }
+        panel.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(24).toFloat()
+            setColor(Color.argb((alpha * 0.94f).toInt().coerceIn(70, 255), 20, 16, 14))
+            setStroke(dp(1), Color.argb((alpha * 0.52f).toInt().coerceIn(50, 255), 255, 255, 255))
+        }
+        panel.visibility = if (panelVisible) View.VISIBLE else View.GONE
+
+        column.removeAllViews()
+        readySlots.forEachIndexed { index, slot ->
+            column.addView(
+                padCard(slot, playback),
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    if (index > 0) {
+                        topMargin = dp(8)
+                    }
                 },
             )
-        })
+        }
+        layoutParams?.let { params ->
+            windowManager?.updateViewLayout(root, params)
+        }
+    }
 
-        windowManager?.addView(bubble, params)
-        bubbleView = bubble
-        layoutParams = params
+    private fun padCard(slot: SoundpadSlot, playback: SoundpadPlayback): LinearLayout {
+        val isPlaying = playback.playing && playback.activeSlotId == slot.id
+        val accent = OVERLAY_ACCENTS[slot.accentIndex % OVERLAY_ACCENTS.size]
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(
+                    Color.argb(if (isPlaying) 228 else 188, Color.red(accent), Color.green(accent), Color.blue(accent)),
+                    Color.argb(if (isPlaying) 164 else 134, 28, 24, 20),
+                ),
+            ).apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), Color.argb(164, Color.red(accent), Color.green(accent), Color.blue(accent)))
+            }
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            isClickable = true
+            isFocusable = true
+            addView(TextView(this@SoundpadOverlayBubbleService).apply {
+                text = slot.title
+                setTextColor(Color.WHITE)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setTypeface(typeface, Typeface.BOLD)
+            })
+            addView(TextView(this@SoundpadOverlayBubbleService).apply {
+                text = buildString {
+                    append(slot.subtitle.ifBlank { "Готов к запуску" })
+                    append(" • ")
+                    append(if (isPlaying) "Стоп" else "Пуск")
+                }
+                setTextColor(Color.argb(215, 236, 228, 216))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setPadding(0, dp(6), 0, 0)
+            })
+            setOnClickListener { toggleSlot(slot, playback) }
+        }
+    }
+
+    private fun toggleSlot(slot: SoundpadSlot, playback: SoundpadPlayback) {
+        val updated = if (playback.playing && playback.activeSlotId == slot.id) {
+            playback.copy(
+                playing = false,
+                sessionId = System.currentTimeMillis(),
+            )
+        } else {
+            playback.copy(
+                activeSlotId = slot.id,
+                playing = true,
+                sessionId = System.currentTimeMillis(),
+            )
+        }.sanitized()
+        ModuleConfigClient.saveSoundpadPlayback(this, updated)
+        refreshOverlay()
     }
 
     private fun resolveAvatarRes(): Int {
@@ -146,7 +310,7 @@ class SoundpadOverlayBubbleService : Service() {
                     }
                     params.x = startX + deltaX
                     params.y = startY + deltaY
-                    windowManager?.updateViewLayout(view, params)
+                    rootView?.let { windowManager?.updateViewLayout(it, params) }
                     return true
                 }
 
@@ -162,6 +326,15 @@ class SoundpadOverlayBubbleService : Service() {
     }
 
     companion object {
+        private val OVERLAY_ACCENTS = intArrayOf(
+            Color.parseColor("#F0BE36"),
+            Color.parseColor("#25D1D8"),
+            Color.parseColor("#F16E8D"),
+            Color.parseColor("#98E05B"),
+            Color.parseColor("#76A6FF"),
+            Color.parseColor("#FF9A52"),
+        )
+
         fun sync(context: Context, show: Boolean, userInitiated: Boolean) {
             if (!show) {
                 context.stopService(Intent(context, SoundpadOverlayBubbleService::class.java))

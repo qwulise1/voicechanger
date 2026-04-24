@@ -24,7 +24,7 @@ enum class UiAccentPreset(
 ) {
     GOLD(
         id = "gold",
-        title = "Gold",
+        title = "Золото",
         accentLight = 0xFFD29B22.toInt(),
         accentDark = 0xFFF0BE36.toInt(),
         altLight = 0xFF0FBEC9.toInt(),
@@ -32,7 +32,7 @@ enum class UiAccentPreset(
     ),
     GREEN(
         id = "green",
-        title = "Green",
+        title = "Лайм",
         accentLight = 0xFF57A94B.toInt(),
         accentDark = 0xFF8FD266.toInt(),
         altLight = 0xFF0EBAA5.toInt(),
@@ -40,7 +40,7 @@ enum class UiAccentPreset(
     ),
     CYAN(
         id = "cyan",
-        title = "Cyan",
+        title = "Лёд",
         accentLight = 0xFF1595C7.toInt(),
         accentDark = 0xFF36B4E8.toInt(),
         altLight = 0xFF15C9D1.toInt(),
@@ -48,11 +48,43 @@ enum class UiAccentPreset(
     ),
     ROSE(
         id = "rose",
-        title = "Rose",
+        title = "Роза",
         accentLight = 0xFFD46A86.toInt(),
         accentDark = 0xFFF37A9A.toInt(),
         altLight = 0xFFE08B43.toInt(),
         altDark = 0xFFFFAE5E.toInt(),
+    ),
+    MINT(
+        id = "mint",
+        title = "Мята",
+        accentLight = 0xFF27AF8B.toInt(),
+        accentDark = 0xFF56D1AB.toInt(),
+        altLight = 0xFF1793B0.toInt(),
+        altDark = 0xFF42B7D4.toInt(),
+    ),
+    OCEAN(
+        id = "ocean",
+        title = "Океан",
+        accentLight = 0xFF2369C9.toInt(),
+        accentDark = 0xFF4F93F2.toInt(),
+        altLight = 0xFF12B8C8.toInt(),
+        altDark = 0xFF4CE0E8.toInt(),
+    ),
+    SUNSET(
+        id = "sunset",
+        title = "Закат",
+        accentLight = 0xFFE06A2F.toInt(),
+        accentDark = 0xFFFF8A4F.toInt(),
+        altLight = 0xFFDA4167.toInt(),
+        altDark = 0xFFFF7196.toInt(),
+    ),
+    STEEL(
+        id = "steel",
+        title = "Сталь",
+        accentLight = 0xFF66768C.toInt(),
+        accentDark = 0xFF95A7BF.toInt(),
+        altLight = 0xFF3BA69B.toInt(),
+        altDark = 0xFF63CDC0.toInt(),
     ),
     ;
 
@@ -66,6 +98,7 @@ data class UiSettings(
     val themeMode: UiThemeMode = UiThemeMode.SYSTEM,
     val accentPresetId: String = UiAccentPreset.GOLD.id,
     val useMonet: Boolean = false,
+    val overlayOpacityPercent: Int = 82,
 ) {
     val accentPreset: UiAccentPreset
         get() = UiAccentPreset.fromId(accentPresetId)
@@ -76,6 +109,7 @@ object UiSettingsStore {
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_ACCENT_PRESET = "accent_preset"
     private const val KEY_USE_MONET = "use_monet"
+    private const val KEY_OVERLAY_OPACITY = "overlay_opacity"
 
     fun read(context: Context): UiSettings {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -83,6 +117,7 @@ object UiSettingsStore {
             themeMode = UiThemeMode.fromId(prefs.getString(KEY_THEME_MODE, UiThemeMode.SYSTEM.id)),
             accentPresetId = prefs.getString(KEY_ACCENT_PRESET, UiAccentPreset.GOLD.id).orEmpty(),
             useMonet = prefs.getBoolean(KEY_USE_MONET, false),
+            overlayOpacityPercent = prefs.getInt(KEY_OVERLAY_OPACITY, 82).coerceIn(35, 100),
         )
     }
 
@@ -90,12 +125,14 @@ object UiSettingsStore {
         val sanitized = settings.copy(
             themeMode = UiThemeMode.fromId(settings.themeMode.id),
             accentPresetId = settings.accentPreset.id,
+            overlayOpacityPercent = settings.overlayOpacityPercent.coerceIn(35, 100),
         )
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_THEME_MODE, sanitized.themeMode.id)
             .putString(KEY_ACCENT_PRESET, sanitized.accentPreset.id)
             .putBoolean(KEY_USE_MONET, sanitized.useMonet)
+            .putInt(KEY_OVERLAY_OPACITY, sanitized.overlayOpacityPercent)
             .apply()
         return sanitized
     }

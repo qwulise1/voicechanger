@@ -1,12 +1,9 @@
 package com.qwulise.voicechanger.module
 
-import android.app.Application
-import android.content.Context
 import android.media.AudioRecord
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
 import com.qwulise.voicechanger.core.VoiceConfig
-import com.qwulise.voicechanger.core.VoiceConfigContract
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
@@ -29,24 +26,9 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
 
         XposedBridge.log("qwulivoice: installing safe AudioRecord.read hook in $packageName")
-        XposedBridge.hookAllMethods(Application::class.java, "attach", createApplicationAttachHook(packageName))
         XposedBridge.hookAllConstructors(AudioRecord::class.java, createAudioRecordConstructorHook(packageName))
         XposedBridge.hookAllMethods(AudioRecord::class.java, "startRecording", createStartRecordingHook(packageName))
         XposedBridge.hookAllMethods(AudioRecord::class.java, "read", createAudioReadHook(packageName))
-    }
-
-    private fun createApplicationAttachHook(packageName: String) = object : XC_MethodHook() {
-        override fun afterHookedMethod(param: MethodHookParam) {
-            val context = param.args.firstOrNull() as? Context
-            ProcessContextResolver.attach(context)
-            DiagnosticsClient.reportEvent(
-                packageName = packageName,
-                source = "Application.attach",
-                detail = "LSPosed module injected. process=${android.os.Process.myPid()} rootConfig=${ModuleFileBridge.readConfig() != null}",
-                rateKey = "$packageName|Application.attach|injected",
-                minIntervalMs = 15_000L,
-            )
-        }
     }
 
     private fun createAudioRecordConstructorHook(packageName: String) = object : XC_MethodHook() {
@@ -99,6 +81,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
         val audioRecord = param.thisObject as? AudioRecord ?: return
         val session = HookBridge.registerAudioRecord(audioRecord, packageName)
         val sampleRate = audioRecord.sampleRate.takeIf { it > 0 } ?: session.sampleRate ?: 48_000
+        val channelCount = audioRecord.channelCount.takeIf { it > 0 } ?: session.channelCount ?: 1
         val state = HookBridge.stateFor(audioRecord)
 
         when (val buffer = param.args.firstOrNull()) {
@@ -120,6 +103,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                         offsetBytes = offset.coerceAtLeast(0),
                         byteCount = readCount,
                         outputSampleRate = sampleRate,
+                        channelCount = channelCount,
                         state = state,
                         snapshot = soundpadSnapshot,
                     )
@@ -144,6 +128,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                         offset = offset.coerceAtLeast(0),
                         count = readCount,
                         outputSampleRate = sampleRate,
+                        channelCount = channelCount,
                         state = state,
                         snapshot = soundpadSnapshot,
                     )
@@ -168,6 +153,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                         offset = offset.coerceAtLeast(0),
                         count = readCount,
                         outputSampleRate = sampleRate,
+                        channelCount = channelCount,
                         state = state,
                         snapshot = soundpadSnapshot,
                     )
@@ -189,6 +175,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                         buffer = buffer,
                         byteCount = readCount,
                         outputSampleRate = sampleRate,
+                        channelCount = channelCount,
                         state = state,
                         snapshot = soundpadSnapshot,
                     )
@@ -238,27 +225,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                     return cachedConfig
                 }
 
-                val rootConfig = ModuleFileBridge.readConfig()
-                val context = ProcessContextResolver.resolve()
-                if (context == null) {
-                    cachedConfig = rootConfig ?: cachedConfig
-                    lastLoadedAt = refreshedNow
-                    return cachedConfig
-                }
-
-                cachedConfig = try {
-                    VoiceConfig.fromBundle(
-                        requireNotNull(context.contentResolver.call(
-                            VoiceConfigContract.CONTENT_URI,
-                            VoiceConfigContract.METHOD_GET_CONFIG,
-                            null,
-                            null,
-                        )) { "provider returned null config" },
-                    )
-                } catch (error: Throwable) {
-                    XposedBridge.log("qwulivoice: config fetch failed: $error")
-                    rootConfig ?: cachedConfig
-                }
+                cachedConfig = ModuleFileBridge.readConfig() ?: cachedConfig
 
                 lastLoadedAt = refreshedNow
                 return cachedConfig
@@ -289,24 +256,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
                     source = source,
                     detail = detail,
                 )
-                val context = ProcessContextResolver.resolve()
-                val delivered = if (context == null) {
-                    ModuleFileBridge.appendEvent(event)
-                } else {
-                    runCatching {
-                        requireNotNull(context.contentResolver.call(
-                            VoiceConfigContract.CONTENT_URI,
-                            VoiceConfigContract.METHOD_APPEND_LOG,
-                            null,
-                            android.os.Bundle().apply {
-                                putString(VoiceConfigContract.KEY_LOG_PACKAGE_NAME, packageName)
-                                putString(VoiceConfigContract.KEY_LOG_SOURCE, source)
-                                putString(VoiceConfigContract.KEY_LOG_DETAIL, detail)
-                                putLong(VoiceConfigContract.KEY_LOG_TIMESTAMP_MS, now)
-                            },
-                        )) { "provider returned null append result" }
-                    }.isSuccess || ModuleFileBridge.appendEvent(event)
-                }
+                val delivered = ModuleFileBridge.appendEvent(event)
                 if (delivered) {
                     synchronized(lastEvents) { lastEvents[rateKey] = now }
                 } else {

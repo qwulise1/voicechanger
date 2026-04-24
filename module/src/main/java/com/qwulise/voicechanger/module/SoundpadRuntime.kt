@@ -61,6 +61,7 @@ object SoundpadMixer {
         offset: Int,
         count: Int,
         outputSampleRate: Int,
+        channelCount: Int,
         state: VoiceProcessingState,
         snapshot: SoundpadSnapshot,
     ) {
@@ -69,9 +70,17 @@ object SoundpadMixer {
             return
         }
         val safeCount = count.coerceAtMost(samples.size - offset)
-        repeat(safeCount) { index ->
-            val mixed = (samples[offset + index] / 32768f) + nextSample(outputSampleRate, runtime)
-            samples[offset + index] = packToShort(mixed)
+        val channels = channelCount.coerceAtLeast(1)
+        var sampleIndex = 0
+        while (sampleIndex < safeCount) {
+            val frameGain = nextSample(outputSampleRate, runtime)
+            val frameWidth = minOf(channels, safeCount - sampleIndex)
+            repeat(frameWidth) { channel ->
+                val targetIndex = offset + sampleIndex + channel
+                val mixed = (samples[targetIndex] / 32768f) + frameGain
+                samples[targetIndex] = packToShort(mixed)
+            }
+            sampleIndex += frameWidth
         }
     }
 
@@ -80,6 +89,7 @@ object SoundpadMixer {
         offset: Int,
         count: Int,
         outputSampleRate: Int,
+        channelCount: Int,
         state: VoiceProcessingState,
         snapshot: SoundpadSnapshot,
     ) {
@@ -88,9 +98,16 @@ object SoundpadMixer {
             return
         }
         val safeCount = count.coerceAtMost(samples.size - offset)
-        repeat(safeCount) { index ->
-            samples[offset + index] = (samples[offset + index] + nextSample(outputSampleRate, runtime))
-                .coerceIn(-1f, 1f)
+        val channels = channelCount.coerceAtLeast(1)
+        var sampleIndex = 0
+        while (sampleIndex < safeCount) {
+            val frameGain = nextSample(outputSampleRate, runtime)
+            val frameWidth = minOf(channels, safeCount - sampleIndex)
+            repeat(frameWidth) { channel ->
+                val targetIndex = offset + sampleIndex + channel
+                samples[targetIndex] = (samples[targetIndex] + frameGain).coerceIn(-1f, 1f)
+            }
+            sampleIndex += frameWidth
         }
     }
 
@@ -99,6 +116,7 @@ object SoundpadMixer {
         offsetBytes: Int,
         byteCount: Int,
         outputSampleRate: Int,
+        channelCount: Int,
         state: VoiceProcessingState,
         snapshot: SoundpadSnapshot,
     ) {
@@ -111,13 +129,21 @@ object SoundpadMixer {
             .let { it - (it % 2) }
         var cursor = offsetBytes
         val end = offsetBytes + safeByteCount
+        val channels = channelCount.coerceAtLeast(1)
+        var channelIndex = 0
+        var frameGain = nextSample(outputSampleRate, runtime)
         while (cursor < end) {
             val raw = (buffer[cursor].toInt() and 0xFF) or (buffer[cursor + 1].toInt() shl 8)
-            val mixed = (raw.toShort().toInt() / 32768f) + nextSample(outputSampleRate, runtime)
+            val mixed = (raw.toShort().toInt() / 32768f) + frameGain
             val packed = packToShort(mixed).toInt()
             buffer[cursor] = (packed and 0xFF).toByte()
             buffer[cursor + 1] = ((packed shr 8) and 0xFF).toByte()
             cursor += 2
+            channelIndex += 1
+            if (channelIndex >= channels) {
+                channelIndex = 0
+                frameGain = nextSample(outputSampleRate, runtime)
+            }
         }
     }
 
@@ -125,6 +151,7 @@ object SoundpadMixer {
         buffer: ByteBuffer,
         byteCount: Int,
         outputSampleRate: Int,
+        channelCount: Int,
         state: VoiceProcessingState,
         snapshot: SoundpadSnapshot,
     ) {
@@ -139,6 +166,7 @@ object SoundpadMixer {
                 offsetBytes = offset,
                 byteCount = byteCount,
                 outputSampleRate = outputSampleRate,
+                channelCount = channelCount,
                 state = state,
                 snapshot = snapshot,
             )
@@ -146,11 +174,18 @@ object SoundpadMixer {
         }
         val duplicate = buffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         val sampleCount = (byteCount - (byteCount % 2)) / 2
+        val channels = channelCount.coerceAtLeast(1)
         duplicate.position(0)
-        repeat(sampleCount) {
-            val mixed = (duplicate.short / 32768f) + nextSample(outputSampleRate, runtime)
-            duplicate.position(duplicate.position() - 2)
-            duplicate.putShort(packToShort(mixed))
+        var sampleIndex = 0
+        while (sampleIndex < sampleCount) {
+            val frameGain = nextSample(outputSampleRate, runtime)
+            val frameWidth = minOf(channels, sampleCount - sampleIndex)
+            repeat(frameWidth) {
+                val mixed = (duplicate.short / 32768f) + frameGain
+                duplicate.position(duplicate.position() - 2)
+                duplicate.putShort(packToShort(mixed))
+                sampleIndex += 1
+            }
         }
     }
 

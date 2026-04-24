@@ -20,7 +20,7 @@ object HookBridge {
 
     fun activeTargets(): List<String> = listOf(
         "Safe-mode AudioRecord.read(...) Java hook",
-        "ContentProvider-backed shared config",
+        "Root-file shared config",
         "Per-stream PCM state cache",
         "Ring-buffer live logs",
     )
