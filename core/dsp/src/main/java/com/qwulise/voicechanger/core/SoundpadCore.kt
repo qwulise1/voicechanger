@@ -50,33 +50,35 @@ data class SoundpadSlot(
 }
 
 data class SoundpadLibrary(
-    val slots: List<SoundpadSlot> = defaultSlots(),
+    val slots: List<SoundpadSlot> = emptyList(),
 ) {
     fun sanitized(): SoundpadLibrary {
-        val normalized = slots
-            .take(MAX_SLOTS)
-            .mapIndexed { index, slot ->
-                slot.copy(
-                    id = slot.id.ifBlank { "slot_${index + 1}" },
-                    accentIndex = if (slot.accentIndex < 0) index else slot.accentIndex,
-                ).sanitized()
+        val usedIds = linkedSetOf<String>()
+        val normalized = slots.mapIndexed { index, slot ->
+            var safeId = SoundpadSlot.safeId(slot.id.ifBlank { "slot_${index + 1}" })
+            while (!usedIds.add(safeId)) {
+                safeId = "${safeId}_${index + 1}"
             }
-        return if (normalized.size >= MAX_SLOTS) {
-            copy(slots = normalized)
-        } else {
-            copy(slots = normalized + defaultSlots().drop(normalized.size))
+            slot.copy(
+                id = safeId,
+                accentIndex = if (slot.accentIndex < 0) index else slot.accentIndex,
+            ).sanitized()
         }
+        return copy(slots = normalized)
     }
 
     fun slot(slotId: String): SoundpadSlot? =
         sanitized().slots.firstOrNull { it.id == slotId }
 
-    companion object {
-        const val MAX_SLOTS = 6
-
-        fun defaultSlots(): List<SoundpadSlot> =
-            List(MAX_SLOTS, SoundpadSlot::empty)
-    }
+    fun appendSlot(): SoundpadLibrary =
+        sanitized().let { library ->
+            val nextIndex = generateSequence(0) { it + 1 }
+                .first { candidate ->
+                    val slotId = SoundpadSlot.empty(candidate).id
+                    library.slots.none { it.id == slotId }
+                }
+            library.copy(slots = library.slots + SoundpadSlot.empty(nextIndex)).sanitized()
+        }
 }
 
 data class SoundpadPlayback(
@@ -131,8 +133,8 @@ object SoundpadFileBridge {
             load(StringReader(raw))
         }
         val count = properties.getProperty("slot_count")?.toIntOrNull()
-            ?.coerceIn(0, SoundpadLibrary.MAX_SLOTS)
-            ?: SoundpadLibrary.MAX_SLOTS
+            ?.coerceAtLeast(0)
+            ?: 0
         val slots = List(count) { index ->
             SoundpadSlot(
                 id = properties.getProperty("slot.$index.id") ?: "slot_${index + 1}",

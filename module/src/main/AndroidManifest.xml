@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:allowBackup="false"
         android:icon="@drawable/qwulivoice_avatar"
@@ -35,6 +37,10 @@
                 android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="true" />
         </service>
+
+        <service
+            android:name="com.qwulise.voicechanger.app.SoundpadOverlayBubbleService"
+            android:exported="false" />
 
         <meta-data
             android:name="xposedmodule"

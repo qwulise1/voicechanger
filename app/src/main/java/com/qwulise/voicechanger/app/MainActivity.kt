@@ -1,6 +1,8 @@
 package com.qwulise.voicechanger.app
 
+import android.animation.LayoutTransition
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Color
@@ -8,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -18,6 +21,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewOutlineProvider
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.AlphaAnimation
 import android.view.animation.Animation
@@ -29,8 +33,10 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.ViewFlipper
+import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.SoundpadLibrary
 import com.qwulise.voicechanger.core.SoundpadPlayback
 import com.qwulise.voicechanger.core.SoundpadSlot
@@ -42,13 +48,20 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
+    private lateinit var uiSettings: UiSettings
     private lateinit var palette: UiPalette
     private lateinit var flipper: ViewFlipper
+    private lateinit var navBar: FrameLayout
+    private lateinit var navIndicator: View
+    private lateinit var navRow: LinearLayout
+
     private lateinit var statusText: TextView
     private lateinit var homeModeValue: TextView
     private lateinit var homeBoostValue: TextView
+    private lateinit var homePadValue: TextView
     private lateinit var homeSummaryText: TextView
     private lateinit var powerSwitch: PillSwitch
+
     private lateinit var modeFlow: FlowLayout
     private lateinit var modeSummary: TextView
     private lateinit var effectCard: LinearLayout
@@ -57,11 +70,19 @@ class MainActivity : AppCompatActivity() {
     private lateinit var effectSlider: GlassSlider
     private lateinit var boostValue: TextView
     private lateinit var boostSlider: GlassSlider
+
     private lateinit var soundpadNowText: TextView
+    private lateinit var soundpadOverlayText: TextView
     private lateinit var soundpadMixValue: TextView
     private lateinit var soundpadMixSlider: GlassSlider
     private lateinit var soundpadLoopSwitch: PillSwitch
     private lateinit var soundpadPadsColumn: LinearLayout
+
+    private lateinit var themeModeFlow: FlowLayout
+    private lateinit var accentFlow: FlowLayout
+    private lateinit var monetSwitch: PillSwitch
+    private lateinit var logsStatusText: TextView
+    private lateinit var logsColumn: LinearLayout
 
     private val uiHandler = Handler(Looper.getMainLooper())
     private val modeItems = VoiceMode.entries.toList()
@@ -75,6 +96,9 @@ class MainActivity : AppCompatActivity() {
     private var soundpadLibrary = SoundpadLibrary()
     private var soundpadPlayback = SoundpadPlayback()
     private var pendingImportSlotId: String? = null
+    private var logsEvents: List<DiagnosticEvent> = emptyList()
+
+    private lateinit var importLauncher: ActivityResultLauncher<Array<String>>
 
     private val saveRunnable = Runnable { saveCurrentConfig() }
     private val soundpadSaveRunnable = Runnable { saveSoundpadPlayback() }
@@ -93,7 +117,7 @@ class MainActivity : AppCompatActivity() {
                 ): Boolean {
                     val deltaX = e2.x - (e1?.x ?: e2.x)
                     val deltaY = e2.y - (e1?.y ?: e2.y)
-                    if (abs(deltaX) < abs(deltaY) || abs(deltaX) < dp(72) || abs(velocityX) < 650f) {
+                    if (abs(deltaX) < abs(deltaY) || abs(deltaX) < dp(68) || abs(velocityX) < 650f) {
                         return false
                     }
                     if (deltaX < 0f) {
@@ -109,55 +133,75 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        uiSettings = UiSettingsStore.read(this)
         palette = resolvePalette()
-
-        val importLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        importLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let(::importIntoPendingSlot)
         }
-        this.importLauncher = importLauncher
 
         val root = FrameLayout(this).apply {
             background = GradientDrawable(
                 GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(palette.backgroundTop, palette.backgroundBottom),
             )
-            addView(decorBlob(palette.heroAccent.withAlpha(46), 240, 240), FrameLayout.LayoutParams(dp(240), dp(240)).apply {
+            addView(decorBlob(palette.heroAccent.withAlpha(42), 260, 260), FrameLayout.LayoutParams(dp(260), dp(260)).apply {
                 gravity = Gravity.TOP or Gravity.END
-                topMargin = dp(32)
-                marginEnd = -dp(48)
+                topMargin = dp(24)
+                marginEnd = -dp(56)
             })
-            addView(decorBlob(palette.accentAlt.withAlpha(40), 180, 180), FrameLayout.LayoutParams(dp(180), dp(180)).apply {
+            addView(decorBlob(palette.accentAlt.withAlpha(34), 220, 220), FrameLayout.LayoutParams(dp(220), dp(220)).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
-                bottomMargin = dp(72)
-                marginStart = -dp(36)
+                bottomMargin = dp(54)
+                marginStart = -dp(58)
             })
         }
 
         val shell = FrameLayout(this).apply {
-            setPadding(dp(16), statusBarInset() + dp(12), dp(16), dp(20))
+            setPadding(dp(16), statusBarInset() + dp(12), dp(16), 0)
         }
 
         flipper = ViewFlipper(this).apply {
             addView(homePage())
             addView(voicePage())
             addView(soundpadPage())
+            addView(settingsPage())
         }
-        shell.addView(flipper, FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-        ).apply {
-            bottomMargin = dp(104)
-        })
-        shell.addView(bottomBar(), FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT,
-            Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL,
-        ))
+        shell.addView(
+            flipper,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        shell.addView(
+            bottomBar(),
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM,
+            ).apply {
+                leftMargin = dp(6)
+                rightMargin = dp(6)
+                bottomMargin = dp(20)
+            },
+        )
 
         root.addView(shell)
         setContentView(root)
 
         loadState()
+        applyStartPageFromIntent(intent, animated = false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        syncOverlayBubble(userInitiated = false)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyStartPageFromIntent(intent, animated = true)
     }
 
     override fun onStop() {
@@ -179,17 +223,35 @@ class MainActivity : AppCompatActivity() {
             .sanitizeForThisBuild()
         soundpadLibrary = ModuleConfigClient.loadSoundpadLibrary(this).sanitized()
         soundpadPlayback = ModuleConfigClient.loadSoundpadPlayback(this).sanitized()
+        if (!config.enabled && soundpadPlayback.playing) {
+            soundpadPlayback = soundpadPlayback.copy(
+                playing = false,
+                sessionId = System.currentTimeMillis(),
+            ).sanitized()
+            runCatching { ModuleConfigClient.saveSoundpadPlayback(this, soundpadPlayback) }
+        }
         selectedModeIndex = modeItems.indexOf(config.mode).coerceAtLeast(0)
         powerSwitch.checked = config.enabled
         effectSlider.progress = config.effectStrength
         boostSlider.progress = config.micGainPercent
         soundpadMixSlider.progress = soundpadPlayback.mixPercent
         soundpadLoopSwitch.checked = soundpadPlayback.looping
+        monetSwitch.checked = uiSettings.useMonet
         renderModeChips()
-        renderAll("Готово. Свайпай между вкладками или жми на нижний бар.")
+        renderThemeSelectors()
+        renderAll("Готово. Все основные штуки под рукой.")
         suppressUiCallbacks = false
-        dirty = true
-        uiHandler.postDelayed(saveRunnable, AUTO_SAVE_DELAY_MS)
+        dirty = false
+        soundpadDirty = false
+        refreshLogs()
+        syncOverlayBubble(userInitiated = false)
+    }
+
+    private fun applyStartPageFromIntent(intent: Intent?, animated: Boolean) {
+        val target = intent?.getIntExtra(EXTRA_START_PAGE, -1) ?: -1
+        if (target in 0 until Page.entries.size) {
+            switchPage(target, animated)
+        }
     }
 
     private fun VoiceConfig.sanitizeForThisBuild(): VoiceConfig =
@@ -203,7 +265,7 @@ class MainActivity : AppCompatActivity() {
         pageScroll().apply {
             addView(pageColumn().apply {
                 addView(heroCard())
-                addView(metricRow())
+                addView(metricGrid())
                 addView(powerCard())
                 addView(footerCard())
             })
@@ -212,11 +274,10 @@ class MainActivity : AppCompatActivity() {
     private fun voicePage(): ScrollView =
         pageScroll().apply {
             addView(pageColumn().apply {
-                addView(pageIntro("Голос", "Режимы, тембр и усиление микрофона без стокового уныния."))
+                addView(pageIntro("Голос", "Режимы, тембр и усиление микрофона. Без лишнего мусора и с мгновенным сохранением."))
                 addView(modeCard())
                 addView(effectCard())
                 addView(boostCard())
-                addView(noteCard("Quick note", "Custom semitones появляется только для своей модуляции. Остальное сохраняется автоматически."))
             })
         }
 
@@ -226,7 +287,15 @@ class MainActivity : AppCompatActivity() {
                 addView(pageIntro("Soundpad", "Импортируй свои звуки или музыку и кидай их прямо в микрофон одним тапом."))
                 addView(soundpadControlCard())
                 addView(soundpadPadsCard())
-                addView(noteCard("Как юзать", "Пустой пад импортирует файл. Готовый пад запускает звук, маленькая кнопка меняет файл, loop держит его по кругу."))
+            })
+        }
+
+    private fun settingsPage(): ScrollView =
+        pageScroll().apply {
+            addView(pageColumn().apply {
+                addView(pageIntro("Настройки", "Светлая, темная, monet, цвета и живые логи модуля в одном месте."))
+                addView(themeSettingsCard())
+                addView(logsCard())
             })
         }
 
@@ -243,41 +312,58 @@ class MainActivity : AppCompatActivity() {
     private fun pageColumn(): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, 0, dp(24))
+            layoutTransition = LayoutTransition().apply {
+                setDuration(220L)
+            }
+            setPadding(0, 0, 0, dp(104))
         }
 
     private fun heroCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = gradientCard(palette.heroBackgroundStart, palette.heroBackgroundEnd, palette.heroStroke, 30)
+        background = gradientCard(palette.heroBackgroundStart, palette.heroBackgroundEnd, palette.heroStroke, 32)
         setPadding(dp(20), dp(20), dp(20), dp(18))
         layoutParams = panelParams(14)
 
         addView(LinearLayout(this@MainActivity).apply {
-            gravity = Gravity.CENTER_VERTICAL
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             addView(FrameLayout(this@MainActivity).apply {
-                background = rounded(palette.surfaceElevated.withAlpha(150), 26, palette.heroStroke.withAlpha(210))
-                layoutParams = LinearLayout.LayoutParams(dp(76), dp(76)).apply {
+                background = rounded(palette.surfaceElevated.withAlpha(150), 28, palette.heroStroke.withAlpha(210))
+                clipToOutline = true
+                outlineProvider = ViewOutlineProvider.BACKGROUND
+                layoutParams = LinearLayout.LayoutParams(dp(92), dp(92)).apply {
                     rightMargin = dp(14)
                 }
-                addView(ImageView(this@MainActivity).apply {
+                addView(ImageView(context).apply {
                     setImageResource(resolveAvatarRes())
                     scaleType = ImageView.ScaleType.CENTER_CROP
                 }, FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.MATCH_PARENT,
-                ).apply {
-                    setMargins(dp(8), dp(8), dp(8), dp(8))
-                })
+                ))
             })
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                addView(chip("ROOT • BETA", palette.heroChipBackground, palette.heroChipText))
-                addView(title("qwulivoice", 32f).apply {
-                    setPadding(0, dp(10), 0, 0)
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    addView(chip("ROOT • BETA", palette.heroChipBackground, palette.heroChipText))
+                    addView(
+                        chip("@qwulise", palette.surface.withAlpha(82), palette.primaryText).apply {
+                            setPadding(dp(10), dp(6), dp(10), dp(6))
+                        },
+                        LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT,
+                        ).apply {
+                            leftMargin = dp(8)
+                        },
+                    )
                 })
-                addView(body("Голос, кружки, звонки и теперь soundpad в одном жирном интерфейсе.").apply {
+                addView(title("qwulivoice", 32f).apply {
+                    setPadding(0, dp(12), 0, 0)
+                })
+                addView(body("Голос, кружки, звонки и soundpad. Все в одном приложении.").apply {
                     setTextColor(palette.secondaryText)
                     setPadding(0, dp(6), 0, 0)
                 })
@@ -290,20 +376,23 @@ class MainActivity : AppCompatActivity() {
         addView(statusText)
     }
 
-    private fun metricRow(): LinearLayout = LinearLayout(this).apply {
+    private fun metricGrid(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL
         layoutParams = panelParams(14)
         val modeMetric = metricCard("Режим")
         homeModeValue = modeMetric.second
-        addView(modeMetric.first, metricParams(true))
+        addView(modeMetric.first, metricParams(0))
         val boostMetric = metricCard("Микро")
         homeBoostValue = boostMetric.second
-        addView(boostMetric.first, metricParams(false))
+        addView(boostMetric.first, metricParams(1))
+        val padMetric = metricCard("Pad")
+        homePadValue = padMetric.second
+        addView(padMetric.first, metricParams(2))
     }
 
     private fun powerCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 26)
+        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 28)
         setPadding(dp(18), dp(18), dp(18), dp(18))
         layoutParams = panelParams(14)
 
@@ -313,39 +402,40 @@ class MainActivity : AppCompatActivity() {
                 offColor = palette.switchOff,
                 thumbColor = Color.WHITE,
             )
-            onCheckedChange = { onConfigChanged() }
+            onCheckedChange = { onMasterPowerChanged() }
         }
 
         addView(LinearLayout(this@MainActivity).apply {
-            gravity = Gravity.CENTER_VERTICAL
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 addView(title("Главный тумблер", 18f))
-                addView(body("Если включить soundpad на паде, тумблер сам поднимется.").apply {
+                addView(body("Один свитч управляет и голосом, и активным soundpad.").apply {
                     setTextColor(palette.secondaryText)
-                    setPadding(0, dp(4), dp(12), 0)
+                    setPadding(0, dp(5), dp(12), 0)
                 })
             })
             addView(powerSwitch)
         })
+
         homeSummaryText = body("").apply {
-            setPadding(0, dp(16), 0, 0)
             setTextColor(palette.primaryText)
+            setPadding(0, dp(16), 0, 0)
         }
         addView(homeSummaryText)
     }
 
     private fun footerCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(palette.surface.withAlpha(170), 24, palette.cardStroke)
-        setPadding(dp(18), dp(18), dp(18), dp(18))
+        background = rounded(palette.surface.withAlpha(164), 24, palette.cardStroke)
+        setPadding(dp(16), dp(16), dp(16), dp(16))
         layoutParams = panelParams(14)
-        addView(title("@qwulise", 16f))
-        addView(body("Плитку в шторке можно добавить отдельно. Темная и светлая тема подхватываются автоматически.").apply {
+        addView(title("Автор", 14f))
+        addView(body("@qwulise").apply {
+            setPadding(0, dp(4), 0, 0)
             setTextColor(palette.secondaryText)
-            setPadding(0, dp(6), 0, 0)
         })
     }
 
@@ -362,11 +452,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun modeCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 26)
+        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 28)
         setPadding(dp(18), dp(18), dp(18), dp(18))
         layoutParams = panelParams(14)
         addView(title("Режимы", 20f))
-        addView(body("Тап по карточке сразу применяет режим и перерисовывает параметры.").apply {
+        addView(body("Тап по карточке сразу применяет режим и обновляет все связанные параметры.").apply {
             setTextColor(palette.secondaryText)
             setPadding(0, dp(6), 0, dp(12))
         })
@@ -384,10 +474,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun effectCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 26)
+        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 28)
         setPadding(dp(18), dp(18), dp(18), dp(18))
         layoutParams = panelParams(14)
-        effectLabel = title("Интенсивность", 20f)
+        effectLabel = title("Интенсивность режима", 20f)
         addView(effectLabel)
         effectValue = body("").apply {
             setTextColor(palette.primaryText)
@@ -407,7 +497,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun boostCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 26)
+        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 28)
         setPadding(dp(18), dp(18), dp(18), dp(18))
         layoutParams = panelParams(14)
         addView(title("Усиление микрофона", 20f))
@@ -427,7 +517,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun soundpadControlCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 26)
+        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 28)
         setPadding(dp(18), dp(18), dp(18), dp(18))
         layoutParams = panelParams(14)
 
@@ -441,17 +531,22 @@ class MainActivity : AppCompatActivity() {
         }
 
         addView(LinearLayout(this@MainActivity).apply {
-            gravity = Gravity.CENTER_VERTICAL
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 addView(title("Параметры soundpad", 20f))
                 soundpadNowText = body("").apply {
+                    setTextColor(palette.primaryText)
+                    setPadding(0, dp(6), 0, 0)
+                }
+                addView(soundpadNowText)
+                soundpadOverlayText = body("").apply {
                     setTextColor(palette.secondaryText)
                     setPadding(0, dp(6), dp(12), 0)
                 }
-                addView(soundpadNowText)
+                addView(soundpadOverlayText)
             })
             addView(soundpadLoopSwitch)
         })
@@ -471,52 +566,143 @@ class MainActivity : AppCompatActivity() {
 
     private fun soundpadPadsCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 26)
+        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 28)
         setPadding(dp(18), dp(18), dp(18), dp(18))
         layoutParams = panelParams(14)
-        addView(title("Пады", 20f))
-        addView(body("Сделано под быстрый тап: импорт, запуск, стоп, замена.").apply {
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(title("Пады", 20f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(actionButton("+ Добавить", palette.accent, if (palette.accent.isLight()) palette.backgroundTop else Color.WHITE).apply {
+                setOnClickListener { onAddPadRequested() }
+            })
+        })
+        addView(body("Добавляй сколько нужно. Пустых заготовок больше нет.").apply {
             setTextColor(palette.secondaryText)
             setPadding(0, dp(6), 0, dp(14))
         })
         soundpadPadsColumn = LinearLayout(this@MainActivity).apply {
             orientation = LinearLayout.VERTICAL
+            layoutTransition = LayoutTransition().apply {
+                setDuration(220L)
+            }
         }
         addView(soundpadPadsColumn)
     }
 
-    private fun noteCard(title: String, body: String): LinearLayout = LinearLayout(this).apply {
+    private fun themeSettingsCard(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(palette.surface.withAlpha(165), 22, palette.cardStroke)
-        setPadding(dp(16), dp(16), dp(16), dp(16))
+        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 28)
+        setPadding(dp(18), dp(18), dp(18), dp(18))
         layoutParams = panelParams(14)
-        addView(this@MainActivity.title(title, 15f))
-        addView(this@MainActivity.body(body).apply {
+        addView(title("Оформление", 22f))
+        addView(body("Отдельная вкладка под тему, акцент и системные цвета.").apply {
             setTextColor(palette.secondaryText)
-            setPadding(0, dp(6), 0, 0)
+            setPadding(0, dp(6), 0, dp(18))
+        })
+        addView(settingBlock("Тема", "Как выглядит приложение целиком").apply {
+            themeModeFlow = FlowLayout(this@MainActivity).apply {
+                horizontalSpacing = dp(8)
+                verticalSpacing = dp(8)
+            }
+            addView(themeModeFlow)
+        })
+        addView(settingBlock("Цвет", "Базовый акцент для карточек и контролов").apply {
+            accentFlow = FlowLayout(this@MainActivity).apply {
+                horizontalSpacing = dp(8)
+                verticalSpacing = dp(8)
+            }
+            addView(accentFlow)
+        })
+        addView(settingSwitchBlock("Monet", "Использовать системные dynamic-цвета, если Android умеет.") { switch ->
+            monetSwitch = switch.apply {
+                setColors(
+                    onColor = palette.accent,
+                    offColor = palette.switchOff,
+                    thumbColor = Color.WHITE,
+                )
+                onCheckedChange = {
+                    if (!suppressUiCallbacks) {
+                        updateUiSettings(uiSettings.copy(useMonet = checked))
+                    }
+                }
+            }
         })
     }
 
-    private fun bottomBar(): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER
-        background = rounded(palette.navBackground, 30, palette.cardStroke.withAlpha(205))
-        setPadding(dp(10), dp(10), dp(10), dp(10))
-        elevation = dp(8).toFloat()
+    private fun logsCard(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = gradientCard(palette.surface, palette.surfaceAlt, palette.cardStroke, 28)
+        setPadding(dp(18), dp(18), dp(18), dp(18))
+        layoutParams = panelParams(14)
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(title("Логи", 22f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(ghostButton("Обновить").apply {
+                setOnClickListener { refreshLogs() }
+            })
+            addView(
+                ghostButton("Очистить").apply {
+                    setOnClickListener { clearLogs() }
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ).apply {
+                    leftMargin = dp(8)
+                },
+            )
+        })
+        logsStatusText = body("Подтягиваю последние события хука и provider...").apply {
+            setTextColor(palette.secondaryText)
+            setPadding(0, dp(8), 0, dp(14))
+        }
+        addView(logsStatusText)
+        logsColumn = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        addView(logsColumn)
+    }
+
+    private fun bottomBar(): FrameLayout = FrameLayout(this).apply {
+        navBar = this
+        background = rounded(palette.navBackground, 30, palette.navStroke)
+        setPadding(dp(8), dp(8), dp(8), dp(8))
+        elevation = dp(12).toFloat()
+
+        navIndicator = View(this@MainActivity).apply {
+            background = gradientCard(
+                palette.navBubbleStart,
+                palette.navBubbleEnd,
+                palette.navBubbleStroke,
+                24,
+            )
+        }
+        addView(navIndicator, FrameLayout.LayoutParams(0, dp(58)).apply {
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        })
+
+        navRow = LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        addView(navRow, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER,
+        ))
+
         Page.entries.forEach { page ->
             val item = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                background = rounded(Color.TRANSPARENT, 22, Color.TRANSPARENT)
-                setPadding(dp(18), dp(10), dp(18), dp(10))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    if (page != Page.entries.last()) {
-                        rightMargin = dp(6)
-                    }
-                }
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                minimumHeight = dp(58)
                 addView(TextView(this@MainActivity).apply {
                     text = page.icon
                     setTextColor(palette.navText)
@@ -527,26 +713,28 @@ class MainActivity : AppCompatActivity() {
                 addView(TextView(this@MainActivity).apply {
                     text = page.label
                     setTextColor(palette.navText)
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
                     gravity = Gravity.CENTER
                     setPadding(0, dp(4), 0, 0)
                 })
                 setOnClickListener { switchPage(page.ordinal) }
             }
             navButtons[page] = item
-            addView(item)
+            navRow.addView(item, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         }
-        renderNavBar()
+
+        post { renderNavBar(animated = false) }
     }
 
     private fun metricCard(label: String): Pair<LinearLayout, TextView> {
-        val valueView = title("...", 18f)
+        val valueView = title("...", 17f)
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(palette.surface.withAlpha(175), 22, palette.cardStroke)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = rounded(palette.surface.withAlpha(170), 22, palette.cardStroke)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
             addView(body(label).apply {
                 setTextColor(palette.secondaryText)
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
             })
             addView(valueView.apply {
                 setPadding(0, dp(8), 0, 0)
@@ -554,42 +742,86 @@ class MainActivity : AppCompatActivity() {
         } to valueView
     }
 
-    private fun metricParams(first: Boolean): LinearLayout.LayoutParams =
+    private fun metricParams(index: Int): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-            if (first) {
-                rightMargin = dp(7)
-            } else {
-                leftMargin = dp(7)
+            if (index > 0) {
+                leftMargin = dp(8)
             }
         }
+
+    private fun settingBlock(title: String, summary: String): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = rounded(palette.surface.withAlpha(120), 22, palette.cardStroke)
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        layoutParams = panelParams(12)
+        addView(this@MainActivity.title(title, 16f))
+        addView(body(summary).apply {
+            setTextColor(palette.secondaryText)
+            setPadding(0, dp(4), 0, dp(10))
+        })
+    }
+
+    private fun settingSwitchBlock(
+        title: String,
+        summary: String,
+        configure: (PillSwitch) -> Unit,
+    ): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = rounded(palette.surface.withAlpha(120), 22, palette.cardStroke)
+        setPadding(dp(14), dp(14), dp(14), dp(14))
+        layoutParams = panelParams(12)
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(this@MainActivity.title(title, 16f))
+                addView(body(summary).apply {
+                    setTextColor(palette.secondaryText)
+                    setPadding(0, dp(4), dp(12), 0)
+                })
+            })
+            addView(PillSwitch(this@MainActivity).also(configure))
+        })
+    }
 
     private fun renderAll(message: String) {
         renderValueLabels()
         renderHomeCards()
         renderSoundpad()
+        renderThemeSelectors()
         renderStatus(message)
-        renderNavBar()
+        renderNavBar(animated = false)
     }
 
     private fun renderModeChips() {
         modeFlow.removeAllViews()
         modeItems.forEachIndexed { index, mode ->
-            modeFlow.addView(TextView(this).apply {
-                text = mode.title
-                gravity = Gravity.CENTER
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-                setTypeface(typeface, if (index == selectedModeIndex) Typeface.BOLD else Typeface.NORMAL)
-                setTextColor(if (index == selectedModeIndex) palette.chipSelectedText else palette.primaryText)
-                background = rounded(
-                    if (index == selectedModeIndex) palette.chipSelected else palette.chipBackground,
-                    18,
-                    if (index == selectedModeIndex) palette.heroAccent.withAlpha(180) else palette.cardStroke,
-                )
-                setPadding(dp(14), dp(10), dp(14), dp(10))
+            modeFlow.addView(selectorChip(mode.title, index == selectedModeIndex).apply {
                 setOnClickListener {
                     selectedModeIndex = index
                     renderModeChips()
                     onConfigChanged()
+                }
+            })
+        }
+    }
+
+    private fun renderThemeSelectors() {
+        themeModeFlow.removeAllViews()
+        UiThemeMode.entries.forEach { mode ->
+            themeModeFlow.addView(selectorChip(mode.title, uiSettings.themeMode == mode).apply {
+                setOnClickListener {
+                    updateUiSettings(uiSettings.copy(themeMode = mode))
+                }
+            })
+        }
+        accentFlow.removeAllViews()
+        UiAccentPreset.entries.forEach { preset ->
+            accentFlow.addView(selectorChip(preset.title, uiSettings.accentPreset == preset).apply {
+                setOnClickListener {
+                    updateUiSettings(uiSettings.copy(accentPresetId = preset.id))
                 }
             })
         }
@@ -602,12 +834,14 @@ class MainActivity : AppCompatActivity() {
             VoiceMode.ORIGINAL -> {
                 effectCard.visibility = View.GONE
             }
+
             VoiceMode.CUSTOM -> {
                 effectCard.visibility = View.VISIBLE
                 effectLabel.text = "Custom semitones"
                 val semitones = ((effectSlider.progress - 50) / 50f) * 12f
                 effectValue.text = "Тон: ${if (semitones >= 0f) "+" else ""}${"%.1f".format(semitones)}"
             }
+
             else -> {
                 effectCard.visibility = View.VISIBLE
                 effectLabel.text = "Интенсивность режима"
@@ -622,10 +856,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderHomeCards() {
+        val activePad = currentActivePad()
         homeModeValue.text = currentMode().title
         homeBoostValue.text = if (boostSlider.progress == 0) "0%" else "${boostSlider.progress}%"
-        val activeSlot = soundpadLibrary.slot(soundpadPlayback.activeSlotId)
-            ?.takeIf { soundpadPlayback.playing && it.isReady }
+        homePadValue.text = activePad?.title ?: "Off"
         homeSummaryText.text = buildString {
             append(if (powerSwitch.checked) "Обработка включена." else "Обработка выключена.")
             append("\n")
@@ -634,26 +868,62 @@ class MainActivity : AppCompatActivity() {
                 append(" • Микро ${boostSlider.progress}%")
             }
             append("\n")
-            append("Soundpad: ${activeSlot?.title ?: "тишина"}")
+            append("Soundpad: ${activePad?.title ?: "ничего не играет"}")
+            append(" • Overlay: ")
+            append(
+                when {
+                    !powerSwitch.checked -> "off"
+                    activePad == null -> "ожидает запуск"
+                    SoundpadOverlayBubbleService.canDraw(this@MainActivity) -> "активен"
+                    else -> "нужен доступ"
+                },
+            )
         }
     }
 
     private fun renderSoundpad() {
-        soundpadMixValue.text = "Громкость падов: ${soundpadMixSlider.progress}%"
-        val activeSlot = soundpadLibrary.slot(soundpadPlayback.activeSlotId)
-            ?.takeIf { soundpadPlayback.playing && it.isReady }
+        val activePad = currentActivePad()
         soundpadNowText.text = when {
-            activeSlot == null -> "Сейчас: ничего не играет"
-            soundpadPlayback.looping -> "Сейчас: ${activeSlot.title} • loop on"
-            else -> "Сейчас: ${activeSlot.title}"
+            activePad == null -> "Сейчас: ничего не играет"
+            soundpadPlayback.looping -> "Сейчас: ${activePad.title} • loop on"
+            else -> "Сейчас: ${activePad.title}"
         }
+        soundpadOverlayText.text = when {
+            !powerSwitch.checked -> "Главный тумблер выключен, поэтому soundpad тоже стоит."
+            activePad == null -> "Оверлей-кнопка появится, когда запустишь какой-нибудь пад."
+            SoundpadOverlayBubbleService.canDraw(this) -> "Плавающая кнопка с авой уже должна висеть поверх приложений."
+            else -> "Для плавающей кнопки выдай доступ к показу поверх других приложений."
+        }
+        soundpadMixValue.text = "Громкость падов: ${soundpadMixSlider.progress}%"
         renderSoundpadPads()
         renderHomeCards()
     }
 
     private fun renderSoundpadPads() {
         soundpadPadsColumn.removeAllViews()
-        soundpadLibrary.sanitized().slots.chunked(2).forEachIndexed { rowIndex, rowSlots ->
+        val slots = soundpadLibrary.sanitized().slots
+        if (slots.isEmpty()) {
+            soundpadPadsColumn.addView(
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    background = rounded(palette.surface.withAlpha(110), 24, palette.cardStroke)
+                    setPadding(dp(18), dp(22), dp(18), dp(22))
+                    addView(title("Пока пусто", 18f))
+                    addView(body("Добавь первый пад и импортируй звук в один тап.").apply {
+                        setTextColor(palette.secondaryText)
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(8), 0, dp(14))
+                    })
+                    addView(actionButton("+ Добавить первый пад", palette.accent, if (palette.accent.isLight()) palette.backgroundTop else Color.WHITE).apply {
+                        setOnClickListener { onAddPadRequested() }
+                    })
+                },
+            )
+            return
+        }
+
+        slots.chunked(2).forEachIndexed { rowIndex, rowSlots ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 if (rowIndex > 0) {
@@ -661,16 +931,19 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             rowSlots.forEachIndexed { index, slot ->
-                row.addView(soundpadPad(slot), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    if (index == 0) {
-                        rightMargin = dp(6)
-                    } else {
-                        leftMargin = dp(6)
-                    }
-                })
+                row.addView(
+                    soundpadPad(slot),
+                    LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        if (index > 0) {
+                            leftMargin = dp(8)
+                        }
+                    },
+                )
             }
             if (rowSlots.size == 1) {
-                row.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f))
+                row.addView(View(this), LinearLayout.LayoutParams(0, 0, 1f).apply {
+                    leftMargin = dp(8)
+                })
             }
             soundpadPadsColumn.addView(row)
         }
@@ -683,21 +956,36 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             background = gradientCard(
                 palette.surfaceElevated.blendWith(accent, 0.18f),
-                palette.surfaceAlt.blendWith(accent, 0.09f),
-                accent.withAlpha(125),
+                palette.surfaceAlt.blendWith(accent, 0.10f),
+                accent.withAlpha(124),
                 24,
             )
             setPadding(dp(16), dp(16), dp(16), dp(16))
-            setOnClickListener { onPadPrimary(slot) }
-
-            addView(chip(if (slot.isReady) if (isPlaying) "LIVE" else "READY" else "EMPTY", accent.withAlpha(46), accent))
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(chip(
+                    when {
+                        slot.isReady && isPlaying -> "LIVE"
+                        slot.isReady -> "READY"
+                        else -> "EMPTY"
+                    },
+                    accent.withAlpha(44),
+                    accent,
+                ).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                })
+                addView(ghostButton("✕").apply {
+                    setOnClickListener { removePad(slot) }
+                })
+            })
             addView(title(slot.title, 18f).apply {
                 setPadding(0, dp(12), 0, 0)
             })
             addView(body(
                 when {
                     slot.isReady -> slot.subtitle.ifBlank { "Готов к запуску" }
-                    else -> "Импортируй mp3/m4a/wav и он полетит в микрофон"
+                    else -> "Нажми импорт и загрузи свой звук"
                 },
             ).apply {
                 setTextColor(palette.secondaryText)
@@ -706,24 +994,20 @@ class MainActivity : AppCompatActivity() {
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 addView(actionButton(
-                    text = when {
+                    when {
                         !slot.isReady -> "Импорт"
                         isPlaying -> "Стоп"
                         else -> "Play"
                     },
-                    backgroundColor = accent,
-                    textColor = if (accent.isLight()) palette.backgroundTop else Color.WHITE,
+                    accent,
+                    if (accent.isLight()) palette.backgroundTop else Color.WHITE,
                 ).apply {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
                         rightMargin = dp(6)
                     }
                     setOnClickListener { onPadPrimary(slot) }
                 })
-                addView(actionButton(
-                    text = if (slot.isReady) "Сменить" else "Pick",
-                    backgroundColor = palette.surface.withAlpha(96),
-                    textColor = palette.primaryText,
-                ).apply {
+                addView(ghostButton(if (slot.isReady) "Сменить" else "Pick").apply {
                     layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                     setOnClickListener { launchImporter(slot.id) }
                 })
@@ -731,65 +1015,67 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun onPadPrimary(slot: SoundpadSlot) {
-        if (!slot.isReady) {
-            launchImporter(slot.id)
+    private fun renderLogs() {
+        logsColumn.removeAllViews()
+        if (logsEvents.isEmpty()) {
+            logsColumn.addView(body("Логи пока пустые. Сначала попробуй включить обработку или записать что-нибудь.").apply {
+                setTextColor(palette.secondaryText)
+            })
             return
         }
-        if (!powerSwitch.checked) {
-            powerSwitch.checked = true
-            onConfigChanged()
+        logsEvents.take(MAX_LOG_LINES).forEachIndexed { index, event ->
+            logsColumn.addView(
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    background = rounded(palette.surface.withAlpha(122), 18, palette.cardStroke)
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    if (index > 0) {
+                        (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(8)
+                    }
+                    addView(TextView(this@MainActivity).apply {
+                        text = "${DateFormat.format("HH:mm:ss", Date(event.timestampMs))} • ${event.source}"
+                        setTextColor(palette.titleText)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                        setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
+                    })
+                    addView(TextView(this@MainActivity).apply {
+                        text = event.detail
+                        setTextColor(palette.secondaryText)
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                        setTypeface(Typeface.MONOSPACE)
+                        setLineSpacing(dp(2).toFloat(), 1f)
+                        setPadding(0, dp(6), 0, 0)
+                    })
+                }.also { card ->
+                    card.layoutParams = LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply {
+                        if (index > 0) {
+                            topMargin = dp(8)
+                        }
+                    }
+                },
+            )
         }
-        soundpadPlayback = if (soundpadPlayback.playing && soundpadPlayback.activeSlotId == slot.id) {
-            soundpadPlayback.copy(
+    }
+
+    private fun onMasterPowerChanged() {
+        if (suppressUiCallbacks) {
+            return
+        }
+        if (!powerSwitch.checked && soundpadPlayback.playing) {
+            soundpadPlayback = soundpadPlayback.copy(
                 playing = false,
                 sessionId = System.currentTimeMillis(),
-                mixPercent = soundpadMixSlider.progress,
-                looping = soundpadLoopSwitch.checked,
-            )
-        } else {
-            soundpadPlayback.copy(
-                activeSlotId = slot.id,
-                playing = true,
-                sessionId = System.currentTimeMillis(),
-                mixPercent = soundpadMixSlider.progress,
-                looping = soundpadLoopSwitch.checked,
-            )
-        }.sanitized()
-        renderSoundpad()
-        saveSoundpadPlayback(immediate = true)
-    }
-
-    private fun launchImporter(slotId: String) {
-        pendingImportSlotId = slotId
-        importLauncher.launch(arrayOf("audio/*"))
-    }
-
-    private fun importIntoPendingSlot(uri: android.net.Uri) {
-        val slotId = pendingImportSlotId ?: return
-        pendingImportSlotId = null
-        renderStatus("Импортирую звук в $slotId...")
-        Thread {
-            val updated = runCatching {
-                val library = soundpadLibrary.sanitized()
-                val currentSlot = library.slot(slotId) ?: library.slots.first()
-                val imported = SoundpadImporter.importIntoSlot(this, uri, currentSlot)
-                val updatedLibrary = library.copy(
-                    slots = library.slots.map { if (it.id == slotId) imported else it },
-                ).sanitized()
-                ModuleConfigClient.saveSoundpadLibrary(this, updatedLibrary)
-                updatedLibrary
-            }
-            uiHandler.post {
-                updated.onSuccess { library ->
-                    soundpadLibrary = library
-                    renderSoundpad()
-                    renderStatus("Импортирован пад: ${library.slot(slotId)?.title ?: slotId}")
-                }.onFailure {
-                    renderStatus("Импорт не удался: ${it.message ?: it::class.java.simpleName}")
-                }
-            }
-        }.start()
+            ).sanitized()
+            soundpadDirty = true
+            renderSoundpad()
+            syncOverlayBubble(userInitiated = false)
+            uiHandler.removeCallbacks(soundpadSaveRunnable)
+            uiHandler.post(soundpadSaveRunnable)
+        }
+        onConfigChanged()
     }
 
     private fun onConfigChanged() {
@@ -819,6 +1105,163 @@ class MainActivity : AppCompatActivity() {
         uiHandler.postDelayed(soundpadSaveRunnable, SOUNDPAD_SAVE_DELAY_MS)
     }
 
+    private fun onPadPrimary(slot: SoundpadSlot) {
+        if (!slot.isReady) {
+            launchImporter(slot.id)
+            return
+        }
+        val wasDisabled = !powerSwitch.checked
+        if (wasDisabled) {
+            powerSwitch.checked = true
+            onConfigChanged()
+        }
+        soundpadPlayback = if (soundpadPlayback.playing && soundpadPlayback.activeSlotId == slot.id) {
+            soundpadPlayback.copy(
+                playing = false,
+                sessionId = System.currentTimeMillis(),
+                mixPercent = soundpadMixSlider.progress,
+                looping = soundpadLoopSwitch.checked,
+            )
+        } else {
+            soundpadPlayback.copy(
+                activeSlotId = slot.id,
+                playing = true,
+                sessionId = System.currentTimeMillis(),
+                mixPercent = soundpadMixSlider.progress,
+                looping = soundpadLoopSwitch.checked,
+            )
+        }.sanitized()
+        renderSoundpad()
+        syncOverlayBubble(userInitiated = true)
+        saveSoundpadPlayback(immediate = true)
+    }
+
+    private fun onAddPadRequested() {
+        soundpadLibrary = soundpadLibrary.appendSlot()
+        renderSoundpad()
+        persistSoundpadLibrary("Пад добавлен.")
+    }
+
+    private fun removePad(slot: SoundpadSlot) {
+        soundpadLibrary = soundpadLibrary.copy(
+            slots = soundpadLibrary.sanitized().slots.filterNot { it.id == slot.id },
+        ).sanitized()
+        if (soundpadPlayback.activeSlotId == slot.id) {
+            soundpadPlayback = soundpadPlayback.copy(
+                activeSlotId = "",
+                playing = false,
+                sessionId = System.currentTimeMillis(),
+            ).sanitized()
+            saveSoundpadPlayback(immediate = true, silent = true)
+            syncOverlayBubble(userInitiated = false)
+        }
+        renderSoundpad()
+        persistSoundpadLibrary("Пад удален.")
+    }
+
+    private fun launchImporter(slotId: String) {
+        pendingImportSlotId = slotId
+        importLauncher.launch(arrayOf("audio/*"))
+    }
+
+    private fun importIntoPendingSlot(uri: android.net.Uri) {
+        val slotId = pendingImportSlotId ?: return
+        pendingImportSlotId = null
+        renderStatus("Импортирую звук в $slotId...")
+        Thread {
+            val updated = runCatching {
+                val library = soundpadLibrary.sanitized()
+                val currentSlot = library.slot(slotId) ?: SoundpadSlot.empty(library.slots.size)
+                val imported = SoundpadImporter.importIntoSlot(this, uri, currentSlot)
+                val updatedSlots = if (library.slot(slotId) == null) {
+                    library.slots + imported
+                } else {
+                    library.slots.map { if (it.id == slotId) imported else it }
+                }
+                val updatedLibrary = library.copy(slots = updatedSlots).sanitized()
+                ModuleConfigClient.saveSoundpadLibrary(this, updatedLibrary)
+                updatedLibrary
+            }
+            uiHandler.post {
+                updated.onSuccess { library ->
+                    soundpadLibrary = library
+                    renderSoundpad()
+                    renderStatus("Импортирован пад: ${library.slot(slotId)?.title ?: slotId}")
+                }.onFailure {
+                    renderStatus("Импорт не удался: ${it.message ?: it::class.java.simpleName}")
+                }
+            }
+        }.start()
+    }
+
+    private fun persistSoundpadLibrary(message: String) {
+        val library = soundpadLibrary.sanitized()
+        Thread {
+            val result = runCatching { ModuleConfigClient.saveSoundpadLibrary(this, library) }
+            uiHandler.post {
+                result.onSuccess {
+                    renderStatus(message)
+                }.onFailure {
+                    renderStatus("Библиотека soundpad не сохранилась: ${it.message ?: it::class.java.simpleName}")
+                }
+            }
+        }.start()
+    }
+
+    private fun refreshLogs() {
+        logsStatusText.text = "Обновляю логи..."
+        Thread {
+            val result = runCatching { ModuleConfigClient.loadLogs(this) }
+            uiHandler.post {
+                result.onSuccess { events ->
+                    logsEvents = events
+                    logsStatusText.text = if (events.isEmpty()) {
+                        "Пока пусто."
+                    } else {
+                        "Показаны последние ${minOf(events.size, MAX_LOG_LINES)} событий."
+                    }
+                    renderLogs()
+                }.onFailure {
+                    logsStatusText.text = "Не удалось загрузить логи: ${it.message ?: it::class.java.simpleName}"
+                    logsEvents = emptyList()
+                    renderLogs()
+                }
+            }
+        }.start()
+    }
+
+    private fun clearLogs() {
+        logsStatusText.text = "Чищу логи..."
+        Thread {
+            val result = runCatching { ModuleConfigClient.clearLogs(this) }
+            uiHandler.post {
+                result.onSuccess {
+                    logsEvents = emptyList()
+                    logsStatusText.text = "Логи очищены."
+                    renderLogs()
+                }.onFailure {
+                    logsStatusText.text = "Не удалось очистить: ${it.message ?: it::class.java.simpleName}"
+                }
+            }
+        }.start()
+    }
+
+    private fun updateUiSettings(newSettings: UiSettings) {
+        if (newSettings == uiSettings) {
+            return
+        }
+        uiSettings = UiSettingsStore.write(this, newSettings)
+        recreate()
+    }
+
+    private fun syncOverlayBubble(userInitiated: Boolean) {
+        SoundpadOverlayBubbleService.sync(
+            context = this,
+            show = powerSwitch.checked && soundpadPlayback.playing,
+            userInitiated = userInitiated,
+        )
+    }
+
     private fun saveCurrentConfig() {
         val config = readConfigFromUi()
         val serial = ++saveSerial
@@ -841,7 +1284,7 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun saveSoundpadPlayback(immediate: Boolean = false) {
+    private fun saveSoundpadPlayback(immediate: Boolean = false, silent: Boolean = false) {
         soundpadDirty = false
         val playback = soundpadPlayback.copy(
             mixPercent = soundpadMixSlider.progress,
@@ -854,7 +1297,10 @@ class MainActivity : AppCompatActivity() {
             val result = runCatching { ModuleConfigClient.saveSoundpadPlayback(this, playback) }
             uiHandler.post {
                 result.onSuccess {
-                    renderStatus("Soundpad обновлен.")
+                    syncOverlayBubble(userInitiated = false)
+                    if (!silent) {
+                        renderStatus("Soundpad обновлен.")
+                    }
                 }.onFailure {
                     soundpadDirty = true
                     renderStatus("Soundpad не сохранился: ${it.message ?: it::class.java.simpleName}")
@@ -877,16 +1323,14 @@ class MainActivity : AppCompatActivity() {
         ).sanitized()
 
     private fun renderStatus(message: String) {
-        val config = readConfigFromUi()
-        val activePad = soundpadLibrary.slot(soundpadPlayback.activeSlotId)
-            ?.takeIf { soundpadPlayback.playing && it.isReady }
+        val activePad = currentActivePad()
         statusText.text = buildString {
             append(message)
             append("\n")
-            append(if (config.enabled) "ON" else "OFF")
-            append(" • ${config.mode.title}")
-            if (config.micGainPercent > 0) {
-                append(" • mic ${config.micGainPercent}%")
+            append(if (powerSwitch.checked) "ON" else "OFF")
+            append(" • ${currentMode().title}")
+            if (boostSlider.progress > 0) {
+                append(" • mic ${boostSlider.progress}%")
             }
             if (activePad != null) {
                 append(" • pad ${activePad.title}")
@@ -894,37 +1338,69 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun switchPage(targetIndex: Int) {
+    private fun switchPage(targetIndex: Int, animated: Boolean = true) {
         val bounded = targetIndex.coerceIn(0, Page.entries.size - 1)
         val targetPage = Page.entries[bounded]
-        if (targetPage == currentPage) {
+        if (targetPage == currentPage && flipper.displayedChild == bounded) {
+            renderNavBar(animated = true)
             return
         }
         val forward = bounded > currentPage.ordinal
-        flipper.inAnimation = pageInAnimation(forward)
-        flipper.outAnimation = pageOutAnimation(forward)
+        if (animated) {
+            flipper.inAnimation = pageInAnimation(forward)
+            flipper.outAnimation = pageOutAnimation(forward)
+        } else {
+            flipper.inAnimation = null
+            flipper.outAnimation = null
+        }
         flipper.displayedChild = bounded
         currentPage = targetPage
-        renderNavBar()
+        renderNavBar(animated = true)
+        if (currentPage == Page.SETTINGS && logsEvents.isEmpty()) {
+            refreshLogs()
+        }
     }
 
-    private fun renderNavBar() {
+    private fun renderNavBar(animated: Boolean) {
         navButtons.forEach { (page, button) ->
             val selected = page == currentPage
-            button.background = rounded(
-                if (selected) palette.navSelected else Color.TRANSPARENT,
-                22,
-                if (selected) palette.navSelected else Color.TRANSPARENT,
-            )
             (0 until button.childCount).forEach { index ->
                 val child = button.getChildAt(index) as? TextView ?: return@forEach
                 child.setTextColor(if (selected) palette.navSelectedText else palette.navText)
             }
         }
+        navBar.post { updateNavIndicator(animated) }
+    }
+
+    private fun updateNavIndicator(animated: Boolean) {
+        val button = navButtons[currentPage] ?: return
+        if (button.width == 0) {
+            navBar.post { updateNavIndicator(animated) }
+            return
+        }
+        val params = navIndicator.layoutParams as FrameLayout.LayoutParams
+        if (params.width != button.width) {
+            params.width = button.width
+            navIndicator.layoutParams = params
+        }
+        val targetX = (navRow.left + button.left).toFloat()
+        if (animated) {
+            navIndicator.animate()
+                .x(targetX)
+                .setDuration(240L)
+                .setInterpolator(AccelerateDecelerateInterpolator())
+                .start()
+        } else {
+            navIndicator.x = targetX
+        }
     }
 
     private fun currentMode(): VoiceMode =
         modeItems.getOrElse(selectedModeIndex) { VoiceMode.default }
+
+    private fun currentActivePad(): SoundpadSlot? =
+        soundpadLibrary.slot(soundpadPlayback.activeSlotId)
+            ?.takeIf { powerSwitch.checked && soundpadPlayback.playing && it.isReady }
 
     private fun pageInAnimation(forward: Boolean): Animation =
         AnimationSet(true).apply {
@@ -953,7 +1429,7 @@ class MainActivity : AppCompatActivity() {
                     Animation.RELATIVE_TO_SELF,
                     0f,
                     Animation.RELATIVE_TO_SELF,
-                    if (forward) -0.12f else 0.12f,
+                    if (forward) -0.10f else 0.10f,
                     Animation.RELATIVE_TO_SELF,
                     0f,
                     Animation.RELATIVE_TO_SELF,
@@ -990,6 +1466,20 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(10), dp(6), dp(10), dp(6))
         }
 
+    private fun selectorChip(text: String, selected: Boolean): TextView =
+        TextView(this).apply {
+            this.text = text
+            setTextColor(if (selected) palette.chipSelectedText else palette.primaryText)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            setTypeface(typeface, if (selected) Typeface.BOLD else Typeface.NORMAL)
+            background = rounded(
+                if (selected) palette.chipSelected else palette.chipBackground,
+                18,
+                if (selected) palette.heroAccent.withAlpha(160) else palette.cardStroke,
+            )
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+
     private fun actionButton(text: String, backgroundColor: Int, textColor: Int): TextView =
         TextView(this).apply {
             this.text = text
@@ -999,6 +1489,17 @@ class MainActivity : AppCompatActivity() {
             gravity = Gravity.CENTER
             background = rounded(backgroundColor, 16, Color.TRANSPARENT)
             setPadding(dp(14), dp(10), dp(14), dp(10))
+        }
+
+    private fun ghostButton(text: String): TextView =
+        TextView(this).apply {
+            this.text = text
+            setTextColor(palette.primaryText)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            background = rounded(palette.surface.withAlpha(120), 14, palette.cardStroke)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
         }
 
     private fun rounded(color: Int, radiusDp: Int, strokeColor: Int): GradientDrawable =
@@ -1029,8 +1530,6 @@ class MainActivity : AppCompatActivity() {
             ).apply {
                 shape = GradientDrawable.OVAL
             }
-            alpha = 0.95f
-            layoutParams = FrameLayout.LayoutParams(dp(widthDp), dp(heightDp))
         }
 
     private fun panelParams(bottomDp: Int): LinearLayout.LayoutParams =
@@ -1055,79 +1554,94 @@ class MainActivity : AppCompatActivity() {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
     private fun resolvePalette(): UiPalette {
-        val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        return if (nightMode == Configuration.UI_MODE_NIGHT_YES) {
+        val dark = when (uiSettings.themeMode) {
+            UiThemeMode.SYSTEM -> {
+                val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+                nightMode == Configuration.UI_MODE_NIGHT_YES
+            }
+
+            UiThemeMode.LIGHT -> false
+            UiThemeMode.DARK -> true
+        }
+        val accentBundle = resolveAccentBundle(dark)
+        return if (dark) {
             UiPalette(
-                backgroundTop = Color.parseColor("#100D0A"),
-                backgroundBottom = Color.parseColor("#1A1611"),
-                surface = Color.parseColor("#191510"),
-                surfaceAlt = Color.parseColor("#231C15"),
-                surfaceElevated = Color.parseColor("#2A2017"),
-                heroBackgroundStart = Color.parseColor("#372716"),
-                heroBackgroundEnd = Color.parseColor("#1C1512"),
-                heroStroke = Color.parseColor("#5A3F1F"),
-                heroAccent = Color.parseColor("#F4C237"),
-                accent = Color.parseColor("#F0BE36"),
-                accentAlt = Color.parseColor("#25D1D8"),
-                warning = Color.parseColor("#FF8C42"),
-                titleText = Color.parseColor("#FFF5E5"),
-                primaryText = Color.parseColor("#F0E0C8"),
-                secondaryText = Color.parseColor("#B8A48D"),
-                chipBackground = Color.parseColor("#2A221B"),
-                chipSelected = Color.parseColor("#F0BE36"),
-                chipSelectedText = Color.parseColor("#251906"),
-                switchOff = Color.parseColor("#584B3E"),
-                sliderTrack = Color.parseColor("#4B3D31"),
+                backgroundTop = Color.parseColor("#120F0C"),
+                backgroundBottom = Color.parseColor("#1D1712"),
+                surface = Color.parseColor("#231C16"),
+                surfaceAlt = Color.parseColor("#2B221A"),
+                surfaceElevated = Color.parseColor("#35281E"),
+                heroBackgroundStart = Color.parseColor("#3B2A18").blendWith(accentBundle.accent, 0.20f),
+                heroBackgroundEnd = Color.parseColor("#201812").blendWith(accentBundle.alt, 0.10f),
+                heroStroke = Color.parseColor("#5A4020").blendWith(accentBundle.accent, 0.32f),
+                heroAccent = accentBundle.hero,
+                accent = accentBundle.accent,
+                accentAlt = accentBundle.alt,
+                warning = accentBundle.warning,
+                titleText = Color.parseColor("#FFF6E8"),
+                primaryText = Color.parseColor("#F0E2D1"),
+                secondaryText = Color.parseColor("#B8A28C"),
+                chipBackground = Color.parseColor("#31271F"),
+                chipSelected = accentBundle.accent,
+                chipSelectedText = if (accentBundle.accent.isLight()) Color.parseColor("#1C1209") else Color.WHITE,
+                switchOff = Color.parseColor("#5A4D41"),
+                sliderTrack = Color.parseColor("#564638"),
                 sliderThumb = Color.WHITE,
-                cardStroke = Color.parseColor("#3C2F24"),
-                heroChipBackground = Color.parseColor("#473012"),
-                heroChipText = Color.parseColor("#FFD774"),
-                navBackground = Color.parseColor("#15120F"),
-                navSelected = Color.parseColor("#362815"),
-                navText = Color.parseColor("#CFBDA5"),
-                navSelectedText = Color.parseColor("#FFF1D7"),
+                cardStroke = Color.parseColor("#423328"),
+                heroChipBackground = Color.parseColor("#4A3214"),
+                heroChipText = Color.parseColor("#FFE39B"),
+                navBackground = Color.parseColor("#18130F").withAlpha(236),
+                navStroke = Color.parseColor("#584331").withAlpha(160),
+                navBubbleStart = Color.parseColor("#3C2A1A").blendWith(accentBundle.accent, 0.30f),
+                navBubbleEnd = Color.parseColor("#20160F").blendWith(accentBundle.alt, 0.14f),
+                navBubbleStroke = Color.parseColor("#6A4B24").blendWith(accentBundle.accent, 0.42f),
+                navText = Color.parseColor("#D2BEA6"),
+                navSelectedText = Color.parseColor("#FFF7EC"),
                 slotAccents = intArrayOf(
-                    Color.parseColor("#F4C237"),
-                    Color.parseColor("#25D1D8"),
-                    Color.parseColor("#F66C8B"),
-                    Color.parseColor("#9AE65A"),
-                    Color.parseColor("#B58CFF"),
-                    Color.parseColor("#FFA85E"),
+                    accentBundle.accent,
+                    accentBundle.alt,
+                    Color.parseColor("#F16E8D"),
+                    Color.parseColor("#98E05B"),
+                    Color.parseColor("#AA88FF"),
+                    Color.parseColor("#FF9A52"),
                 ),
             )
         } else {
             UiPalette(
                 backgroundTop = Color.parseColor("#F5EAD9"),
-                backgroundBottom = Color.parseColor("#E8D9C4"),
+                backgroundBottom = Color.parseColor("#E9DCC9"),
                 surface = Color.parseColor("#FFF8EE"),
-                surfaceAlt = Color.parseColor("#F9EEE2"),
+                surfaceAlt = Color.parseColor("#F8EDE0"),
                 surfaceElevated = Color.parseColor("#FFFDF8"),
-                heroBackgroundStart = Color.parseColor("#F1C95C"),
-                heroBackgroundEnd = Color.parseColor("#D89A41"),
-                heroStroke = Color.parseColor("#D19C33"),
-                heroAccent = Color.parseColor("#14BECB"),
-                accent = Color.parseColor("#C98D19"),
-                accentAlt = Color.parseColor("#0FBEC9"),
-                warning = Color.parseColor("#E86B2D"),
+                heroBackgroundStart = Color.parseColor("#F3C95F").blendWith(accentBundle.accent, 0.18f),
+                heroBackgroundEnd = Color.parseColor("#DFA14A").blendWith(accentBundle.alt, 0.10f),
+                heroStroke = Color.parseColor("#D39C33").blendWith(accentBundle.accent, 0.26f),
+                heroAccent = accentBundle.hero,
+                accent = accentBundle.accent,
+                accentAlt = accentBundle.alt,
+                warning = accentBundle.warning,
                 titleText = Color.parseColor("#2D2117"),
-                primaryText = Color.parseColor("#493729"),
-                secondaryText = Color.parseColor("#7C6756"),
-                chipBackground = Color.parseColor("#F2E6D7"),
-                chipSelected = Color.parseColor("#D29B22"),
-                chipSelectedText = Color.WHITE,
-                switchOff = Color.parseColor("#D9C9B5"),
-                sliderTrack = Color.parseColor("#E2D2C0"),
+                primaryText = Color.parseColor("#48372A"),
+                secondaryText = Color.parseColor("#7B6757"),
+                chipBackground = Color.parseColor("#F3E7D9"),
+                chipSelected = accentBundle.accent,
+                chipSelectedText = if (accentBundle.accent.isLight()) Color.parseColor("#1E1307") else Color.WHITE,
+                switchOff = Color.parseColor("#D7C7B2"),
+                sliderTrack = Color.parseColor("#E4D4C2"),
                 sliderThumb = Color.WHITE,
-                cardStroke = Color.parseColor("#DFC5A9"),
-                heroChipBackground = Color.parseColor("#FFF3CB"),
-                heroChipText = Color.parseColor("#8F5B00"),
-                navBackground = Color.parseColor("#1F1813"),
-                navSelected = Color.parseColor("#56412A"),
-                navText = Color.parseColor("#E2D1BF"),
+                cardStroke = Color.parseColor("#DFC6AA"),
+                heroChipBackground = Color.parseColor("#FFF1C8"),
+                heroChipText = Color.parseColor("#8D5B00"),
+                navBackground = Color.parseColor("#1F1813").withAlpha(236),
+                navStroke = Color.parseColor("#5B4330").withAlpha(138),
+                navBubbleStart = Color.parseColor("#5C452D").blendWith(accentBundle.accent, 0.34f),
+                navBubbleEnd = Color.parseColor("#2D2117").blendWith(accentBundle.alt, 0.12f),
+                navBubbleStroke = Color.parseColor("#7D5E3F").blendWith(accentBundle.accent, 0.34f),
+                navText = Color.parseColor("#E5D3BF"),
                 navSelectedText = Color.WHITE,
                 slotAccents = intArrayOf(
-                    Color.parseColor("#D29B22"),
-                    Color.parseColor("#0FBEC9"),
+                    accentBundle.accent,
+                    accentBundle.alt,
                     Color.parseColor("#E86B7A"),
                     Color.parseColor("#63B93B"),
                     Color.parseColor("#8A6CE6"),
@@ -1137,7 +1651,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private lateinit var importLauncher: androidx.activity.result.ActivityResultLauncher<Array<String>>
+    private fun resolveAccentBundle(dark: Boolean): AccentBundle {
+        val preset = uiSettings.accentPreset
+        val fallbackAccent = if (dark) preset.accentDark else preset.accentLight
+        val fallbackAlt = if (dark) preset.altDark else preset.altLight
+        if (uiSettings.useMonet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return AccentBundle(
+                accent = resources.getColor(
+                    if (dark) android.R.color.system_accent1_300 else android.R.color.system_accent1_600,
+                    theme,
+                ),
+                alt = resources.getColor(
+                    if (dark) android.R.color.system_accent2_300 else android.R.color.system_accent2_600,
+                    theme,
+                ),
+                hero = resources.getColor(
+                    if (dark) android.R.color.system_accent3_300 else android.R.color.system_accent3_500,
+                    theme,
+                ),
+                warning = resources.getColor(
+                    if (dark) android.R.color.system_accent1_200 else android.R.color.system_accent1_700,
+                    theme,
+                ),
+            )
+        }
+        return AccentBundle(
+            accent = fallbackAccent,
+            alt = fallbackAlt,
+            hero = fallbackAccent.blendWith(fallbackAlt, 0.36f),
+            warning = if (dark) Color.parseColor("#FF944F") else Color.parseColor("#E56E2F"),
+        )
+    }
+
+    private data class AccentBundle(
+        val accent: Int,
+        val alt: Int,
+        val hero: Int,
+        val warning: Int,
+    )
 
     private data class UiPalette(
         val backgroundTop: Int,
@@ -1165,7 +1716,10 @@ class MainActivity : AppCompatActivity() {
         val heroChipBackground: Int,
         val heroChipText: Int,
         val navBackground: Int,
-        val navSelected: Int,
+        val navStroke: Int,
+        val navBubbleStart: Int,
+        val navBubbleEnd: Int,
+        val navBubbleStroke: Int,
         val navText: Int,
         val navSelectedText: Int,
         val slotAccents: IntArray,
@@ -1175,6 +1729,7 @@ class MainActivity : AppCompatActivity() {
         HOME("Дом", "⌂"),
         VOICE("Голос", "≈"),
         SOUNDPAD("Pad", "♫"),
+        SETTINGS("Тема", "⚙"),
     }
 
     class PillSwitch(context: Context) : View(context) {
@@ -1324,9 +1879,10 @@ class MainActivity : AppCompatActivity() {
 
             totalHeight += lineHeight
             usedWidth = max(usedWidth, lineWidth)
-            val resolvedWidth = resolveSize(usedWidth + paddingLeft + paddingRight, widthMeasureSpec)
-            val resolvedHeight = resolveSize(totalHeight, heightMeasureSpec)
-            setMeasuredDimension(resolvedWidth, resolvedHeight)
+            setMeasuredDimension(
+                resolveSize(usedWidth + paddingLeft + paddingRight, widthMeasureSpec),
+                resolveSize(totalHeight, heightMeasureSpec),
+            )
         }
 
         override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
@@ -1372,7 +1928,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        const val EXTRA_START_PAGE = "start_page"
+        const val START_PAGE_SOUNDPAD = 2
+
         private const val AUTO_SAVE_DELAY_MS = 420L
         private const val SOUNDPAD_SAVE_DELAY_MS = 240L
+        private const val MAX_LOG_LINES = 24
     }
 }
