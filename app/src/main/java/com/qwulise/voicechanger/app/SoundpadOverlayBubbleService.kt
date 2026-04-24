@@ -25,6 +25,7 @@ import android.widget.TextView
 import com.qwulise.voicechanger.core.SoundpadPlayback
 import com.qwulise.voicechanger.core.SoundpadSlot
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class SoundpadOverlayBubbleService : Service() {
     private var windowManager: WindowManager? = null
@@ -32,6 +33,7 @@ class SoundpadOverlayBubbleService : Service() {
     private var layoutParams: WindowManager.LayoutParams? = null
     private var panelView: LinearLayout? = null
     private var padsColumn: LinearLayout? = null
+    private var panelScrollView: ScrollView? = null
     private var bubbleView: FrameLayout? = null
     private var bubbleAvatarView: ImageView? = null
     private var panelVisible = false
@@ -56,6 +58,7 @@ class SoundpadOverlayBubbleService : Service() {
         rootView = null
         panelView = null
         padsColumn = null
+        panelScrollView = null
         bubbleView = null
         bubbleAvatarView = null
         layoutParams = null
@@ -114,6 +117,7 @@ class SoundpadOverlayBubbleService : Service() {
                 ),
             )
         }
+        panelScrollView = scroll
         panel.addView(TextView(this).apply {
             text = "Soundpad"
             setTextColor(Color.WHITE)
@@ -180,6 +184,7 @@ class SoundpadOverlayBubbleService : Service() {
         val bubble = bubbleView ?: return
         val avatar = bubbleAvatarView ?: return
         val column = padsColumn ?: return
+        val scroll = panelScrollView ?: return
         val settings = UiSettingsStore.read(this)
         val library = ModuleConfigClient.loadSoundpadLibrary(this).sanitized()
         val playback = ModuleConfigClient.loadSoundpadPlayback(this).sanitized()
@@ -190,21 +195,47 @@ class SoundpadOverlayBubbleService : Service() {
         }
 
         val overlayOpacity = settings.overlayOpacityPercent.coerceIn(35, 100) / 100f
+        val overlayScale = settings.overlaySizePercent.coerceIn(70, 160) / 100f
+        val avatarSize = (dp(56) * overlayScale).roundToInt().coerceAtLeast(dp(40))
+        val bubblePadding = (dp(6) * overlayScale).roundToInt().coerceAtLeast(dp(4))
+        val bubbleRadius = (dp(24) * overlayScale).roundToInt().toFloat()
+        val avatarRadius = (dp(18) * overlayScale).roundToInt().toFloat()
+        val panelWidth = (dp(230) * overlayScale).roundToInt().coerceAtLeast(dp(180))
+        val panelHeight = (dp(300) * overlayScale).roundToInt().coerceAtLeast(dp(220))
         val alpha = (overlayOpacity * 255f).toInt().coerceIn(80, 255)
+        (avatar.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+            if (params.width != avatarSize || params.height != avatarSize) {
+                params.width = avatarSize
+                params.height = avatarSize
+                avatar.layoutParams = params
+            }
+        }
+        avatar.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = avatarRadius
+            setColor(Color.TRANSPARENT)
+        }
+        bubble.setPadding(bubblePadding, bubblePadding, bubblePadding, bubblePadding)
         bubble.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(24).toFloat()
+            cornerRadius = bubbleRadius
             setColor(Color.argb(alpha, 24, 18, 14))
             setStroke(dp(1), Color.argb((alpha * 0.68f).toInt(), 255, 255, 255))
         }
         panel.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(24).toFloat()
+            cornerRadius = bubbleRadius
             setColor(Color.argb((alpha * 0.94f).toInt().coerceIn(70, 255), 20, 16, 14))
             setStroke(dp(1), Color.argb((alpha * 0.52f).toInt().coerceIn(50, 255), 255, 255, 255))
         }
+        (scroll.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+            if (params.width != panelWidth || params.height != panelHeight) {
+                params.width = panelWidth
+                params.height = panelHeight
+                scroll.layoutParams = params
+            }
+        }
         bubble.alpha = overlayOpacity
-        avatar.alpha = 1f
         panel.alpha = overlayOpacity
         panel.visibility = if (panelVisible) View.VISIBLE else View.GONE
 

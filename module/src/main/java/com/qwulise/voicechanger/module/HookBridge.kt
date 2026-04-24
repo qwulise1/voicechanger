@@ -20,6 +20,7 @@ object HookBridge {
 
     fun activeTargets(): List<String> = listOf(
         "Safe-mode AudioRecord.read(...) Java hook",
+        "WebRTC nativeDataIsRecorded direct-buffer hook",
         "AAudio native read/callback hook",
         "Root-file shared config",
         "Per-stream PCM state cache",
@@ -28,7 +29,6 @@ object HookBridge {
 
     fun plannedTargets(): List<String> = listOf(
         "Re-enable lifecycle hooks after Telegram crash isolation",
-        "Re-enable WebRTC bridge after startup crash isolation",
         "Experimental AAudio native layer re-enable after runtime validation",
         "AAudio input callback wrapper",
         "Oboe wrapper and callback path",

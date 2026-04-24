@@ -83,6 +83,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var monetSwitch: PillSwitch
     private lateinit var overlayOpacityValue: TextView
     private lateinit var overlayOpacitySlider: GlassSlider
+    private lateinit var overlaySizeValue: TextView
+    private lateinit var overlaySizeSlider: GlassSlider
     private lateinit var logsStatusText: TextView
     private lateinit var logsColumn: LinearLayout
 
@@ -250,6 +252,7 @@ class MainActivity : AppCompatActivity() {
         soundpadLoopSwitch.checked = soundpadPlayback.looping
         monetSwitch.checked = uiSettings.useMonet
         overlayOpacitySlider.progress = uiSettings.overlayOpacityPercent
+        overlaySizeSlider.progress = uiSettings.overlaySizePercent
         renderModeChips()
         renderThemeSelectors()
         renderAll("Готово. Все основные штуки под рукой.")
@@ -657,6 +660,20 @@ class MainActivity : AppCompatActivity() {
             }
             addView(overlayOpacitySlider)
         })
+        addView(settingBlock("Размер overlay", "Размер bubble и панели выбора soundpad").apply {
+            overlaySizeValue = body("").apply {
+                setTextColor(palette.primaryText)
+                setPadding(0, 0, 0, dp(10))
+            }
+            addView(overlaySizeValue)
+            overlaySizeSlider = GlassSlider(this@MainActivity).apply {
+                max = 160
+                progress = uiSettings.overlaySizePercent
+                setColors(palette.accent, palette.sliderTrack, palette.sliderThumb)
+                onProgressChange = { onOverlaySizeChanged() }
+            }
+            addView(overlaySizeSlider)
+        })
     }
 
     private fun logsCard(): LinearLayout = LinearLayout(this).apply {
@@ -853,6 +870,7 @@ class MainActivity : AppCompatActivity() {
             })
         }
         overlayOpacityValue.text = "Непрозрачность overlay: ${uiSettings.overlayOpacityPercent}%"
+        overlaySizeValue.text = "Размер overlay: ${uiSettings.overlaySizePercent}%"
     }
 
     private fun renderValueLabels() {
@@ -1245,6 +1263,7 @@ class MainActivity : AppCompatActivity() {
                 updated.onSuccess { library ->
                     soundpadLibrary = library
                     renderSoundpad()
+                    syncOverlayBubble(userInitiated = false)
                     renderStatus("Импортирован пад: ${library.slot(slotId)?.title ?: slotId}")
                 }.onFailure {
                     renderStatus("Импорт не удался: ${it.message ?: it::class.java.simpleName}")
@@ -1259,6 +1278,7 @@ class MainActivity : AppCompatActivity() {
             val result = runCatching { ModuleConfigClient.saveSoundpadLibrary(this, library) }
             uiHandler.post {
                 result.onSuccess {
+                    syncOverlayBubble(userInitiated = false)
                     renderStatus(message)
                 }.onFailure {
                     renderStatus("Библиотека soundpad не сохранилась: ${it.message ?: it::class.java.simpleName}")
@@ -1326,6 +1346,21 @@ class MainActivity : AppCompatActivity() {
             uiSettings = updated
         }
         overlayOpacityValue.text = "Непрозрачность overlay: ${uiSettings.overlayOpacityPercent}%"
+        syncOverlayBubble(userInitiated = false)
+    }
+
+    private fun onOverlaySizeChanged() {
+        if (suppressUiCallbacks) {
+            return
+        }
+        val updated = UiSettingsStore.write(
+            this,
+            uiSettings.copy(overlaySizePercent = overlaySizeSlider.progress),
+        )
+        if (updated != uiSettings) {
+            uiSettings = updated
+        }
+        overlaySizeValue.text = "Размер overlay: ${uiSettings.overlaySizePercent}%"
         syncOverlayBubble(userInitiated = false)
     }
 

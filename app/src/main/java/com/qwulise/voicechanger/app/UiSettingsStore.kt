@@ -99,6 +99,7 @@ data class UiSettings(
     val accentPresetId: String = UiAccentPreset.GOLD.id,
     val useMonet: Boolean = false,
     val overlayOpacityPercent: Int = 82,
+    val overlaySizePercent: Int = 100,
 ) {
     val accentPreset: UiAccentPreset
         get() = UiAccentPreset.fromId(accentPresetId)
@@ -110,6 +111,7 @@ object UiSettingsStore {
     private const val KEY_ACCENT_PRESET = "accent_preset"
     private const val KEY_USE_MONET = "use_monet"
     private const val KEY_OVERLAY_OPACITY = "overlay_opacity"
+    private const val KEY_OVERLAY_SIZE = "overlay_size"
 
     fun read(context: Context): UiSettings {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -118,6 +120,7 @@ object UiSettingsStore {
             accentPresetId = prefs.getString(KEY_ACCENT_PRESET, UiAccentPreset.GOLD.id).orEmpty(),
             useMonet = prefs.getBoolean(KEY_USE_MONET, false),
             overlayOpacityPercent = prefs.getInt(KEY_OVERLAY_OPACITY, 82).coerceIn(35, 100),
+            overlaySizePercent = prefs.getInt(KEY_OVERLAY_SIZE, 100).coerceIn(70, 160),
         )
     }
 
@@ -126,6 +129,7 @@ object UiSettingsStore {
             themeMode = UiThemeMode.fromId(settings.themeMode.id),
             accentPresetId = settings.accentPreset.id,
             overlayOpacityPercent = settings.overlayOpacityPercent.coerceIn(35, 100),
+            overlaySizePercent = settings.overlaySizePercent.coerceIn(70, 160),
         )
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
@@ -133,6 +137,7 @@ object UiSettingsStore {
             .putString(KEY_ACCENT_PRESET, sanitized.accentPreset.id)
             .putBoolean(KEY_USE_MONET, sanitized.useMonet)
             .putInt(KEY_OVERLAY_OPACITY, sanitized.overlayOpacityPercent)
+            .putInt(KEY_OVERLAY_SIZE, sanitized.overlaySizePercent)
             .apply()
         return sanitized
     }
