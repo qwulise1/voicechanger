@@ -142,7 +142,7 @@ class SoundpadOverlayBubbleService : Service() {
             },
         )
 
-        val avatar = ImageView(context).apply {
+        val avatar = ImageView(this).apply {
             setImageResource(resolveAvatarRes())
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = GradientDrawable().apply {

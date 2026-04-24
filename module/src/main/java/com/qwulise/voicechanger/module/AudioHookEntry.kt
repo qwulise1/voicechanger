@@ -1,6 +1,5 @@
 package com.qwulise.voicechanger.module
 
-import android.media.AudioFormat
 import android.media.AudioRecord
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
@@ -218,13 +217,10 @@ class AudioHookEntry : IXposedHookLoadPackage {
         val channelMask = session.channelMask?.takeIf { it > 0 }
             ?: runCatching { audioRecord.channelConfiguration }.getOrNull()?.takeIf { it > 0 }
         if (channelMask != null) {
-            runCatching { AudioFormat.channelCountFromInChannelMask(channelMask) }
-                .getOrNull()
-                ?.takeIf { it > 0 }
-                ?.let { return it }
-            Integer.bitCount(channelMask)
-                .takeIf { it in 1..8 }
-                ?.let { return it }
+            val bits = Integer.bitCount(channelMask)
+            if (bits in 1..8) {
+                return bits
+            }
         }
 
         return 1
