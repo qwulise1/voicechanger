@@ -52,6 +52,11 @@ struct StreamState {
     float subPolarity = 1.0f;
 };
 
+struct CallbackBinding {
+    AAudioStream_dataCallback callback = nullptr;
+    void *userData = nullptr;
+};
+
 HookFunType gHookFunction = nullptr;
 AAudioStreamReadFn gBackupRead = nullptr;
 AAudioOpenStreamFn gBackupOpenStream = nullptr;
@@ -74,7 +79,10 @@ NativeConfigSnapshot gCachedConfig;
 std::mutex gStateMutex;
 std::unordered_map<AAudioStream *, StreamState> gStreamStates;
 std::unordered_map<AAudioStreamBuilder *, bool> gBuilderUsesCallback;
+std::unordered_map<AAudioStreamBuilder *, CallbackBinding> gBuilderCallbacks;
+std::unordered_map<AAudioStream *, CallbackBinding> gStreamCallbacks;
 std::string gProcessPackageName;
+bool gHooksEnabled = false;
 
 bool gReadHookInstalled = false;
 bool gOpenHookInstalled = false;
@@ -345,8 +353,13 @@ std::string formatLabel(aaudio_format_t format) {
     }
 }
 
+bool hooksEnabled() {
+    std::lock_guard<std::mutex> lock(gStateMutex);
+    return gHooksEnabled && !gProcessPackageName.empty();
+}
+
 void installHookIfPresent(void *handle, const char *symbolName, void *replacement, void **backupStorage, bool *installedFlag) {
-    if (gHookFunction == nullptr || handle == nullptr || installedFlag == nullptr || *installedFlag) {
+    if (!hooksEnabled() || gHookFunction == nullptr || handle == nullptr || installedFlag == nullptr || *installedFlag) {
         return;
     }
     void *symbol = dlsym(handle, symbolName);
@@ -359,6 +372,76 @@ void installHookIfPresent(void *handle, const char *symbolName, void *replacemen
     } else {
         logLine(ANDROID_LOG_WARN, std::string("Failed to install hook for ") + symbolName);
     }
+}
+
+aaudio_data_callback_result_t hookedAAudioDataCallback(AAudioStream *stream, void *userData, void *audioData, int32_t numFrames) {
+    CallbackBinding binding;
+    bool hasBinding = false;
+    {
+        std::lock_guard<std::mutex> lock(gStateMutex);
+        const auto iterator = gStreamCallbacks.find(stream);
+        if (iterator != gStreamCallbacks.end()) {
+            binding = iterator->second;
+            hasBinding = binding.callback != nullptr;
+        }
+    }
+
+    const std::string packageName = currentPackageName();
+    if (stream != nullptr && audioData != nullptr && numFrames > 0 && !packageName.empty()) {
+        if (AAudioStream_getDirection(stream) == AAUDIO_DIRECTION_INPUT) {
+            const NativeConfigSnapshot config = loadConfigSnapshot(packageName);
+            if (config.valid && config.enabled && config.allowed) {
+                const int sampleRate = std::max(AAudioStream_getSampleRate(stream), 8000);
+                const int channelCount = std::max(AAudioStream_getChannelCount(stream), 1);
+                const auto format = AAudioStream_getFormat(stream);
+
+                bool applied = false;
+                {
+                    std::lock_guard<std::mutex> lock(gStateMutex);
+                    StreamState &state = gStreamStates[stream];
+                    switch (format) {
+                        case AAUDIO_FORMAT_PCM_I16:
+                            processInt16(static_cast<int16_t *>(audioData), numFrames * channelCount, sampleRate, config, state);
+                            applied = true;
+                            break;
+                        case AAUDIO_FORMAT_PCM_FLOAT:
+                            processFloat(static_cast<float *>(audioData), numFrames * channelCount, sampleRate, config, state);
+                            applied = true;
+                            break;
+                        default:
+                            reportEvent(
+                                packageName,
+                                "AAudio.callback",
+                                "Unsupported native callback format=" + formatLabel(format),
+                                false,
+                                packageName + "|AAudio.callback|unsupported",
+                                20000
+                            );
+                            break;
+                    }
+                }
+
+                if (applied) {
+                    reportEvent(
+                        packageName,
+                        "AAudio.callback",
+                        "Applied native callback hook frames=" + std::to_string(numFrames) +
+                            " rate=" + std::to_string(sampleRate) + "Hz channels=" + std::to_string(channelCount) +
+                            " format=" + formatLabel(format) + " mode=" + config.modeId +
+                            " gain=" + std::to_string(config.micGainPercent) + "%",
+                        false,
+                        packageName + "|AAudio.callback|apply",
+                        12000
+                    );
+                }
+            }
+        }
+    }
+
+    if (hasBinding && binding.callback != nullptr) {
+        return binding.callback(stream, binding.userData != nullptr ? binding.userData : userData, audioData, numFrames);
+    }
+    return AAUDIO_CALLBACK_RESULT_CONTINUE;
 }
 
 aaudio_result_t hookedAAudioStreamRead(AAudioStream *stream, void *buffer, int32_t numFrames, int64_t timeoutNanoseconds) {
@@ -435,6 +518,7 @@ aaudio_result_t hookedAAudioStreamClose(AAudioStream *stream) {
     if (stream != nullptr) {
         std::lock_guard<std::mutex> lock(gStateMutex);
         gStreamStates.erase(stream);
+        gStreamCallbacks.erase(stream);
     }
     if (gBackupClose == nullptr) {
         return AAUDIO_OK;
@@ -446,13 +530,22 @@ aaudio_result_t hookedAAudioBuilderSetDataCallback(AAudioStreamBuilder *builder,
     if (gBackupSetDataCallback == nullptr) {
         return AAUDIO_ERROR_INTERNAL;
     }
-    const aaudio_result_t result = gBackupSetDataCallback(builder, callback, userData);
+    const aaudio_result_t result = gBackupSetDataCallback(
+        builder,
+        callback != nullptr ? hookedAAudioDataCallback : nullptr,
+        userData
+    );
     if (result == AAUDIO_OK && builder != nullptr) {
         std::lock_guard<std::mutex> lock(gStateMutex);
         if (callback != nullptr) {
             gBuilderUsesCallback[builder] = true;
+            CallbackBinding binding;
+            binding.callback = callback;
+            binding.userData = userData;
+            gBuilderCallbacks[builder] = binding;
         } else {
             gBuilderUsesCallback.erase(builder);
+            gBuilderCallbacks.erase(builder);
         }
     }
     return result;
@@ -462,6 +555,7 @@ aaudio_result_t hookedAAudioBuilderDelete(AAudioStreamBuilder *builder) {
     if (builder != nullptr) {
         std::lock_guard<std::mutex> lock(gStateMutex);
         gBuilderUsesCallback.erase(builder);
+        gBuilderCallbacks.erase(builder);
     }
     if (gBackupBuilderDelete == nullptr) {
         return AAUDIO_OK;
@@ -496,6 +590,12 @@ aaudio_result_t hookedAAudioOpenStream(AAudioStreamBuilder *builder, AAudioStrea
         std::lock_guard<std::mutex> lock(gStateMutex);
         usesCallback = builder != nullptr && gBuilderUsesCallback.find(builder) != gBuilderUsesCallback.end();
         gStreamStates.try_emplace(*stream, StreamState{});
+        if (usesCallback && builder != nullptr) {
+            const auto iterator = gBuilderCallbacks.find(builder);
+            if (iterator != gBuilderCallbacks.end()) {
+                gStreamCallbacks[*stream] = iterator->second;
+            }
+        }
     }
 
     reportEvent(
@@ -513,6 +613,9 @@ aaudio_result_t hookedAAudioOpenStream(AAudioStreamBuilder *builder, AAudioStrea
 }
 
 void installAAudioHooks(void *handle) {
+    if (!hooksEnabled()) {
+        return;
+    }
     installHookIfPresent(handle, "AAudioStream_read", reinterpret_cast<void *>(hookedAAudioStreamRead), reinterpret_cast<void **>(&gBackupRead), &gReadHookInstalled);
     installHookIfPresent(handle, "AAudioStream_close", reinterpret_cast<void *>(hookedAAudioStreamClose), reinterpret_cast<void **>(&gBackupClose), &gCloseHookInstalled);
     installHookIfPresent(handle, "AAudioStreamBuilder_setDataCallback", reinterpret_cast<void *>(hookedAAudioBuilderSetDataCallback), reinterpret_cast<void **>(&gBackupSetDataCallback), &gCallbackHookInstalled);
@@ -521,7 +624,7 @@ void installAAudioHooks(void *handle) {
 }
 
 void onLibraryLoaded(const char *name, void *handle) {
-    if (name != nullptr && endsWith(name, "libaaudio.so")) {
+    if (hooksEnabled() && name != nullptr && endsWith(name, "libaaudio.so")) {
         installAAudioHooks(handle);
     }
 }
@@ -538,6 +641,7 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
     {
         std::lock_guard<std::mutex> lock(gStateMutex);
         gProcessPackageName = raw != nullptr ? raw : "";
+        gHooksEnabled = !gProcessPackageName.empty();
     }
     if (raw != nullptr) {
         env->ReleaseStringUTFChars(packageName, raw);
@@ -546,6 +650,16 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
         std::lock_guard<std::mutex> lock(gConfigMutex);
         gCachedConfig.loadedAtMs = 0;
         gCachedConfig.valid = false;
+    }
+
+    if (hooksEnabled()) {
+        void *preloadedHandle = nullptr;
+#ifdef RTLD_NOLOAD
+        preloadedHandle = dlopen("libaaudio.so", RTLD_NOW | RTLD_NOLOAD);
+#endif
+        if (preloadedHandle != nullptr) {
+            installAAudioHooks(preloadedHandle);
+        }
     }
 }
 
@@ -596,10 +710,5 @@ NativeOnModuleLoaded native_init(const NativeAPIEntries *entries) {
     }
 
     gHookFunction = entries->hook_func;
-
-    void *preloadedHandle = dlopen("libaaudio.so", RTLD_NOW);
-    if (preloadedHandle != nullptr) {
-        installAAudioHooks(preloadedHandle);
-    }
     return onLibraryLoaded;
 }

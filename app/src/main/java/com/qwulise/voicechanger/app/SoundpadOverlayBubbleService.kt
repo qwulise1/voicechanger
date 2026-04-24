@@ -33,6 +33,7 @@ class SoundpadOverlayBubbleService : Service() {
     private var panelView: LinearLayout? = null
     private var padsColumn: LinearLayout? = null
     private var bubbleView: FrameLayout? = null
+    private var bubbleAvatarView: ImageView? = null
     private var panelVisible = false
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -56,6 +57,7 @@ class SoundpadOverlayBubbleService : Service() {
         panelView = null
         padsColumn = null
         bubbleView = null
+        bubbleAvatarView = null
         layoutParams = null
         windowManager = null
         super.onDestroy()
@@ -140,28 +142,30 @@ class SoundpadOverlayBubbleService : Service() {
             },
         )
 
+        val avatar = ImageView(context).apply {
+            setImageResource(resolveAvatarRes())
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(18).toFloat()
+                setColor(Color.TRANSPARENT)
+            }
+            clipToOutline = true
+            outlineProvider = ViewOutlineProvider.BACKGROUND
+        }
         val bubble = FrameLayout(this).apply {
             clipToOutline = true
             outlineProvider = ViewOutlineProvider.BACKGROUND
             elevation = dp(14).toFloat()
             setPadding(dp(6), dp(6), dp(6), dp(6))
-            addView(ImageView(context).apply {
-                setImageResource(resolveAvatarRes())
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(18).toFloat()
-                    setColor(Color.TRANSPARENT)
-                }
-                clipToOutline = true
-                outlineProvider = ViewOutlineProvider.BACKGROUND
-            }, FrameLayout.LayoutParams(dp(56), dp(56)))
+            addView(avatar, FrameLayout.LayoutParams(dp(56), dp(56)))
         }
         bubble.setOnTouchListener(DragClickListener(params) {
             panelVisible = !panelVisible
             refreshOverlay()
         })
         bubbleView = bubble
+        bubbleAvatarView = avatar
         root.addView(bubble)
 
         windowManager?.addView(root, params)
@@ -174,6 +178,7 @@ class SoundpadOverlayBubbleService : Service() {
         val root = rootView ?: return
         val panel = panelView ?: return
         val bubble = bubbleView ?: return
+        val avatar = bubbleAvatarView ?: return
         val column = padsColumn ?: return
         val settings = UiSettingsStore.read(this)
         val library = ModuleConfigClient.loadSoundpadLibrary(this).sanitized()
@@ -184,7 +189,8 @@ class SoundpadOverlayBubbleService : Service() {
             return
         }
 
-        val alpha = ((settings.overlayOpacityPercent.coerceIn(35, 100) / 100f) * 255f).toInt().coerceIn(80, 255)
+        val overlayOpacity = settings.overlayOpacityPercent.coerceIn(35, 100) / 100f
+        val alpha = (overlayOpacity * 255f).toInt().coerceIn(80, 255)
         bubble.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(24).toFloat()
@@ -197,6 +203,9 @@ class SoundpadOverlayBubbleService : Service() {
             setColor(Color.argb((alpha * 0.94f).toInt().coerceIn(70, 255), 20, 16, 14))
             setStroke(dp(1), Color.argb((alpha * 0.52f).toInt().coerceIn(50, 255), 255, 255, 255))
         }
+        bubble.alpha = overlayOpacity
+        avatar.alpha = 1f
+        panel.alpha = overlayOpacity
         panel.visibility = if (panelVisible) View.VISIBLE else View.GONE
 
         column.removeAllViews()

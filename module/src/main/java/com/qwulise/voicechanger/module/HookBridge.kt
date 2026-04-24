@@ -20,6 +20,7 @@ object HookBridge {
 
     fun activeTargets(): List<String> = listOf(
         "Safe-mode AudioRecord.read(...) Java hook",
+        "AAudio native read/callback hook",
         "Root-file shared config",
         "Per-stream PCM state cache",
         "Ring-buffer live logs",
@@ -56,6 +57,7 @@ object HookBridge {
                     audioSource = invokeInt(audioRecord, "getAudioSource"),
                     sampleRate = invokeInt(audioRecord, "getSampleRate"),
                     channelCount = invokeInt(audioRecord, "getChannelCount"),
+                    channelMask = invokeInt(audioRecord, "getChannelMask"),
                     encoding = invokeInt(audioRecord, "getFormat"),
                     bufferSizeInFrames = invokeInt(audioRecord, "getBufferSizeInFrames"),
                 )
@@ -148,6 +150,7 @@ data class AudioRecordSession(
     val audioSource: Int?,
     val sampleRate: Int?,
     val channelCount: Int?,
+    val channelMask: Int?,
     val encoding: Int?,
     val bufferSizeInFrames: Int?,
     val createdAtMs: Long = System.currentTimeMillis(),
@@ -156,6 +159,7 @@ data class AudioRecordSession(
         append("source=${audioSourceLabel(audioSource)}")
         sampleRate?.let { append(" rate=${it}Hz") }
         channelCount?.let { append(" channels=$it") }
+        channelMask?.let { append(" mask=$it") }
         encoding?.let { append(" encoding=${encodingLabel(it)}") }
         bufferSizeInFrames?.let { append(" frames=$it") }
     }

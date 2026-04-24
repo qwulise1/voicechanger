@@ -1,5 +1,6 @@
 package com.qwulise.voicechanger.module
 
+import android.media.AudioFormat
 import android.media.AudioRecord
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
@@ -23,6 +24,12 @@ class AudioHookEntry : IXposedHookLoadPackage {
             if (!installedPackages.add(installKey)) {
                 return
             }
+        }
+
+        runCatching {
+            NativeAudioBridge.attachToProcess(packageName)
+        }.onFailure {
+            XposedBridge.log("qwulivoice: native attach failed in $packageName: $it")
         }
 
         XposedBridge.log("qwulivoice: installing safe AudioRecord.read hook in $packageName")
@@ -81,7 +88,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
         val audioRecord = param.thisObject as? AudioRecord ?: return
         val session = HookBridge.registerAudioRecord(audioRecord, packageName)
         val sampleRate = audioRecord.sampleRate.takeIf { it > 0 } ?: session.sampleRate ?: 48_000
-        val channelCount = audioRecord.channelCount.takeIf { it > 0 } ?: session.channelCount ?: 1
+        val channelCount = resolveChannelCount(audioRecord, session)
         val state = HookBridge.stateFor(audioRecord)
 
         when (val buffer = param.args.firstOrNull()) {
@@ -198,10 +205,29 @@ class AudioHookEntry : IXposedHookLoadPackage {
         DiagnosticsClient.reportEvent(
             packageName = packageName,
             source = "AudioRecord.read",
-            detail = "Processed read=$readCount rate=${sampleRate}Hz mode=${config.mode.id} boost=${config.micGainPercent} soundpad=${soundpadSnapshot.activeSlot?.id ?: "off"} ${session.describe()}",
+            detail = "Processed read=$readCount rate=${sampleRate}Hz effectiveChannels=$channelCount mode=${config.mode.id} boost=${config.micGainPercent} soundpad=${soundpadSnapshot.activeSlot?.id ?: "off"} ${session.describe()}",
             rateKey = "$packageName|AudioRecord.read|processed",
             minIntervalMs = 12_000L,
         )
+    }
+
+    private fun resolveChannelCount(audioRecord: AudioRecord, session: AudioRecordSession): Int {
+        audioRecord.channelCount.takeIf { it > 0 }?.let { return it }
+        session.channelCount?.takeIf { it > 0 }?.let { return it }
+
+        val channelMask = session.channelMask?.takeIf { it > 0 }
+            ?: runCatching { audioRecord.channelConfiguration }.getOrNull()?.takeIf { it > 0 }
+        if (channelMask != null) {
+            runCatching { AudioFormat.channelCountFromInChannelMask(channelMask) }
+                .getOrNull()
+                ?.takeIf { it > 0 }
+                ?.let { return it }
+            Integer.bitCount(channelMask)
+                .takeIf { it in 1..8 }
+                ?.let { return it }
+        }
+
+        return 1
     }
 
     private object ConfigClient {
