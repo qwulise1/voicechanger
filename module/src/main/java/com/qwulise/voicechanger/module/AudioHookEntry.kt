@@ -58,7 +58,11 @@ class AudioHookEntry : IXposedHookLoadPackage {
             XposedBridge.hookAllConstructors(AudioRecord::class.java, createAudioRecordConstructorHook(packageName))
             XposedBridge.hookAllMethods(AudioRecord::class.java, "startRecording", createStartRecordingHook(packageName))
             XposedBridge.hookAllMethods(AudioRecord::class.java, "read", createAudioReadHook(packageName))
-            installWebRtcHooks(packageName, lpparam.classLoader)
+            if (shouldInstallWebRtcJavaHooks(packageName)) {
+                installWebRtcHooks(packageName, lpparam.classLoader)
+            } else {
+                XposedBridge.log("qwulivoice: skipping Java WebRTC hook in $packageName for startup safety")
+            }
         }
     }
 
@@ -524,6 +528,9 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     private fun shouldRestrictToMainProcess(packageName: String): Boolean =
         isTelegramFamilyPackage(packageName)
+
+    private fun shouldInstallWebRtcJavaHooks(packageName: String): Boolean =
+        packageName != "org.telegram.messenger"
 
     private object ConfigClient {
         private const val CACHE_WINDOW_MS = 800L
