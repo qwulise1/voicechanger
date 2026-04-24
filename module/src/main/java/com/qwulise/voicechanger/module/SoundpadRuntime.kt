@@ -159,7 +159,7 @@ object SoundpadMixer {
         if (!runtime.active || byteCount < 2) {
             return
         }
-        val startPosition = buffer.position().coerceAtLeast(0)
+        val startPosition = resolveBufferStart(buffer, byteCount)
         val availableBytes = if (buffer.hasArray()) {
             buffer.array().size - (buffer.arrayOffset() + startPosition)
         } else {
@@ -291,6 +291,24 @@ object SoundpadMixer {
                 .asShortBuffer()
             ShortArray(shortBuffer.remaining()).also(shortBuffer::get)
         }.getOrDefault(ShortArray(0))
+
+    private fun resolveBufferStart(buffer: ByteBuffer, byteCount: Int): Int {
+        val position = buffer.position().coerceAtLeast(0)
+        val maxBytes = if (buffer.hasArray()) {
+            buffer.array().size - buffer.arrayOffset()
+        } else {
+            buffer.capacity()
+        }.coerceAtLeast(0)
+        val boundedPosition = position.coerceAtMost(maxBytes)
+        if (boundedPosition == 0 || byteCount <= 0) {
+            return boundedPosition
+        }
+        return if (boundedPosition >= byteCount || boundedPosition + byteCount > maxBytes) {
+            0
+        } else {
+            boundedPosition
+        }
+    }
 
     private fun computeMix(mixPercent: Int, gainPercent: Int): Float {
         val mix = (mixPercent.coerceIn(0, 100) / 100f).toDouble().pow(1.18).toFloat()

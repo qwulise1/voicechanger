@@ -15,7 +15,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 object SoundpadImporter {
@@ -113,9 +112,6 @@ object SoundpadImporter {
             var channels = inputFormat.getIntegerOrNull(MediaFormat.KEY_CHANNEL_COUNT) ?: 1
             var pcmEncoding = AudioFormat.ENCODING_PCM_16BIT
             var frameCount = 0
-            val declaredDurationUs = inputFormat.getLongOrNull(MediaFormat.KEY_DURATION) ?: 0L
-            var lastOutputPresentationUs = 0L
-            var lastOutputFrameDurationUs = 0L
             val info = MediaCodec.BufferInfo()
             var inputDone = false
             var outputDone = false
@@ -173,13 +169,6 @@ object SoundpadImporter {
                                             pcmEncoding = pcmEncoding,
                                         )
                                         frameCount += writtenFrames
-                                        lastOutputPresentationUs = maxOf(lastOutputPresentationUs, info.presentationTimeUs.coerceAtLeast(0L))
-                                        if (sampleRate > 0 && writtenFrames > 0) {
-                                            lastOutputFrameDurationUs = maxOf(
-                                                lastOutputFrameDurationUs,
-                                                (writtenFrames * 1_000_000L) / sampleRate.coerceAtLeast(8_000),
-                                            )
-                                        }
                                     }
                                     codec.releaseOutputBuffer(outputIndex, false)
                                     if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
@@ -196,25 +185,8 @@ object SoundpadImporter {
                 runCatching { extractor.release() }
             }
 
-            val effectiveDurationUs = when {
-                declaredDurationUs > 0L -> declaredDurationUs
-                lastOutputPresentationUs > 0L -> lastOutputPresentationUs + lastOutputFrameDurationUs
-                else -> 0L
-            }
-            val derivedSampleRate = if (effectiveDurationUs > 0L && frameCount > 0) {
-                ((frameCount * 1_000_000L) / effectiveDurationUs).toInt()
-            } else {
-                sampleRate
-            }
-            val effectiveSampleRate = when {
-                derivedSampleRate !in 8_000..96_000 -> sampleRate
-                sampleRate <= 0 -> derivedSampleRate
-                abs(derivedSampleRate - sampleRate) >= (sampleRate / 5) -> derivedSampleRate
-                else -> sampleRate
-            }
-
             DecodedAudio(
-                sampleRate = effectiveSampleRate.coerceAtLeast(8_000),
+                sampleRate = sampleRate.coerceAtLeast(8_000),
                 frameCount = frameCount.coerceAtLeast(0),
             )
         }
@@ -287,9 +259,6 @@ object SoundpadImporter {
 
     private fun MediaFormat.getIntegerOrNull(key: String): Int? =
         if (containsKey(key)) getInteger(key) else null
-
-    private fun MediaFormat.getLongOrNull(key: String): Long? =
-        if (containsKey(key)) getLong(key) else null
 
     private inline fun <T> Cursor.useCursor(block: (Cursor) -> T): T =
         use(block)

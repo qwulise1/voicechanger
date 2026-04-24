@@ -40,7 +40,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
             XposedBridge.log("qwulivoice: native hook skipped for $packageName")
         }
 
-        if (isTelegramStylePackage(packageName)) {
+        if (usesTelegramScopedHooks(packageName)) {
             val scopedInstalled = installTelegramScopedHooks(packageName, lpparam.classLoader)
             XposedBridge.log("qwulivoice: installing telegram-style AudioRecord.read hook in $packageName")
             XposedBridge.hookAllMethods(
@@ -127,14 +127,24 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
 
         val audioRecord = param.thisObject as? AudioRecord ?: return
+        val trackedKind = HookBridge.classifyTrackedRecorder(audioRecord)
         if (trackedOnly) {
-            val tracked = HookBridge.classifyTrackedRecorder(audioRecord)
-            if (tracked == null && !allowUntrackedFallback) {
+            if (trackedKind == null && !allowUntrackedFallback) {
                 return
             }
             if (byteBufferOnly && param.args.firstOrNull() !is ByteBuffer) {
                 return
             }
+        }
+        if (!trackedOnly && trackedKind == RecorderKind.CALL && param.args.firstOrNull() is ByteBuffer) {
+            DiagnosticsClient.reportEvent(
+                packageName = packageName,
+                source = "AudioRecord.read",
+                detail = "Skipping ByteBuffer call-recorder path; WebRTC hook will handle it.",
+                rateKey = "$packageName|AudioRecord.read|webrtc-skip",
+                minIntervalMs = 12_000L,
+            )
+            return
         }
         val session = HookBridge.registerAudioRecord(audioRecord, packageName)
         val sampleRate = audioRecord.sampleRate.takeIf { it > 0 } ?: session.sampleRate ?: 48_000
@@ -218,6 +228,9 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }
 
             is ByteBuffer -> {
+                if (!HookBridge.shouldProcessBuffer(buffer, readCount, "AudioRecord.read")) {
+                    return
+                }
                 if (config.enabled) {
                     PcmVoiceProcessor.processByteBufferPcm16(
                         buffer = buffer,
@@ -428,7 +441,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
             .mapNotNull { it as? Int }
             .firstOrNull { it > 0 }
             ?: buffer.capacity()
-        if (byteCount <= 0 || !HookBridge.shouldProcessWebRtcBuffer(buffer, byteCount)) {
+        if (byteCount <= 0 || !HookBridge.shouldProcessBuffer(buffer, byteCount, "WebRtc.nativeDataIsRecorded")) {
             return
         }
 
@@ -498,15 +511,19 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }.getOrNull()?.takeIf { it > 0 }
         }
 
-    private fun isTelegramStylePackage(packageName: String): Boolean =
+    private fun isTelegramFamilyPackage(packageName: String): Boolean =
         packageName.startsWith("org.telegram.messenger") ||
             packageName.startsWith("com.exteragram")
 
+    private fun usesTelegramScopedHooks(packageName: String): Boolean =
+        packageName == "org.telegram.messenger.beta" ||
+            packageName.startsWith("com.exteragram")
+
     private fun shouldAttachNative(packageName: String): Boolean =
-        !isTelegramStylePackage(packageName)
+        !isTelegramFamilyPackage(packageName)
 
     private fun shouldRestrictToMainProcess(packageName: String): Boolean =
-        isTelegramStylePackage(packageName)
+        isTelegramFamilyPackage(packageName)
 
     private object ConfigClient {
         private const val CACHE_WINDOW_MS = 800L

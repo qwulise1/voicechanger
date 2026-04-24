@@ -150,10 +150,26 @@ object HookBridge {
         }
     }
 
-    fun shouldProcessWebRtcBuffer(buffer: ByteBuffer, byteCount: Int, freshnessWindowMs: Long = 250L): Boolean {
+    fun shouldProcessBuffer(
+        buffer: ByteBuffer,
+        byteCount: Int,
+        source: String,
+        sameSourceWindowMs: Long = 2L,
+        crossSourceWindowMs: Long = 6L,
+    ): Boolean {
         val now = System.currentTimeMillis()
         val previous = synchronized(recentBuffers) { recentBuffers[buffer] } ?: return true
-        return previous.byteCount != byteCount || now - previous.timestampMs > freshnessWindowMs
+        if (previous.byteCount != byteCount) {
+            return true
+        }
+
+        val ageMs = now - previous.timestampMs
+        if (ageMs < 0L) {
+            return true
+        }
+
+        val freshnessWindowMs = if (previous.source == source) sameSourceWindowMs else crossSourceWindowMs
+        return ageMs > freshnessWindowMs
     }
 
     fun isTargetPackageAllowed(config: VoiceConfig, packageName: String): Boolean {

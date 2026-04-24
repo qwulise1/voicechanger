@@ -481,7 +481,7 @@ object PcmVoiceProcessor {
             return
         }
 
-        val startPosition = buffer.position().coerceAtLeast(0)
+        val startPosition = resolveBufferStart(buffer, byteCount)
         val availableBytes = if (buffer.hasArray()) {
             buffer.array().size - (buffer.arrayOffset() + startPosition)
         } else {
@@ -518,6 +518,24 @@ object PcmVoiceProcessor {
                 .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
                 .toShort()
             duplicate.putShort(packed)
+        }
+    }
+
+    private fun resolveBufferStart(buffer: ByteBuffer, byteCount: Int): Int {
+        val position = buffer.position().coerceAtLeast(0)
+        val maxBytes = if (buffer.hasArray()) {
+            buffer.array().size - buffer.arrayOffset()
+        } else {
+            buffer.capacity()
+        }.coerceAtLeast(0)
+        val boundedPosition = position.coerceAtMost(maxBytes)
+        if (boundedPosition == 0 || byteCount <= 0) {
+            return boundedPosition
+        }
+        return if (boundedPosition >= byteCount || boundedPosition + byteCount > maxBytes) {
+            0
+        } else {
+            boundedPosition
         }
     }
 
