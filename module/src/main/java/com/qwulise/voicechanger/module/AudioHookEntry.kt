@@ -679,7 +679,9 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     private fun usesNativeOnlyHooks(packageName: String): Boolean =
         packageName == "org.telegram.messenger" ||
-            packageName.startsWith("com.exteragram")
+            packageName.startsWith("com.exteragram") ||
+            packageName == "com.viber.voip" ||
+            packageName.startsWith("com.discord")
 
     private fun shouldAttachNative(packageName: String): Boolean =
         usesNativeOnlyHooks(packageName) || !isTelegramFamilyPackage(packageName)
@@ -793,11 +795,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
         private val TELEGRAM_PLUGIN_SAFETY_CLASSES = linkedMapOf(
             "com.exteragram.messenger.plugins.PluginsController" to listOf(
                 "applyBlacklist",
-                "applyArtOpts",
-            ),
-            "de.robv.android.xposed.XposedBridge" to listOf(
-                "disableProfileSaver",
-                "setBlacklist",
             ),
         )
     }

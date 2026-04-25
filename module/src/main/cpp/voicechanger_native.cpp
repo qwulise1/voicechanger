@@ -1535,13 +1535,13 @@ void onLibraryLoaded(const char *name, void *handle) {
 
     if (name != nullptr && endsWith(name, "libVoipEngineNative.so")) {
         tryInstallHooksForLibrary("libjingle_peerconnection_so.so", false, true, false, false);
-        tryInstallHooksForLibrary("libaudioclient.so", true, false, false, true);
+        tryInstallHooksForLibrary("libaudioclient.so", false, false, false, true);
     }
     if (name != nullptr && endsWith(name, "libdiscord.so")) {
-        tryInstallHooksForLibrary("libaudioclient.so", true, false, false, true);
+        tryInstallHooksForLibrary("libaudioclient.so", false, false, false, true);
     }
     if (name != nullptr && (endsWith(name, "libtmessages.49.so") || endsWith(name, "libtmessages.so"))) {
-        tryInstallHooksForLibrary("libaudioclient.so", true, false, false, true);
+        tryInstallHooksForLibrary("libaudioclient.so", false, false, false, true);
     }
 }
 
@@ -1584,8 +1584,8 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
     logLine(ANDROID_LOG_INFO, std::string("Attached native bridge to ") + attachedPackage);
 
     if (hooksEnabled()) {
-        tryInstallHooksForLibrary("libaaudio.so", true, false, true, false);
-        tryInstallHooksForLibrary("libaudioclient.so", true, false, false, true);
+        tryInstallHooksForLibrary("libaaudio.so", false, false, true, false);
+        tryInstallHooksForLibrary("libaudioclient.so", false, false, false, true);
         tryInstallHooksForLibrary("libdiscord.so", false, true, false, false);
         tryInstallHooksForLibrary("libjingle_peerconnection_so.so", false, true, false, false);
         tryInstallHooksForLibrary("libVoipEngineNative.so", false, false, false, false);
