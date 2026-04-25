@@ -12,8 +12,8 @@ android {
         applicationId = "com.qwulivoice.beta"
         minSdk = 29
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.13.1-beta"
+        versionCode = 17
+        versionName = "1.14.0-beta"
 
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")

@@ -1,6 +1,7 @@
 package com.qwulise.voicechanger.module
 
 import android.media.AudioRecord
+import android.os.SystemClock
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
 import com.qwulise.voicechanger.core.VoiceConfig
@@ -12,6 +13,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.nio.ByteBuffer
 import java.util.Collections
 import java.lang.reflect.Method
+import java.util.concurrent.atomic.AtomicInteger
 
 class AudioHookEntry : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
@@ -64,7 +66,12 @@ class AudioHookEntry : IXposedHookLoadPackage {
             XposedBridge.hookAllMethods(AudioRecord::class.java, "startRecording", createStartRecordingHook(packageName))
             XposedBridge.hookAllMethods(AudioRecord::class.java, "read", createAudioReadHook(packageName))
             if (shouldInstallWebRtcJavaHooks(packageName)) {
-                installWebRtcHooks(packageName, lpparam.classLoader)
+                val installedAny = installWebRtcHooks(packageName, lpparam.classLoader)
+                if (shouldInstallDeferredWebRtcHooks(packageName)) {
+                    installDeferredWebRtcHooks(packageName, lpparam.classLoader)
+                } else if (!installedAny) {
+                    XposedBridge.log("qwulivoice: WebRTC classes not ready in $packageName")
+                }
             } else {
                 XposedBridge.log("qwulivoice: skipping Java WebRTC hook in $packageName for startup safety")
             }
@@ -409,22 +416,69 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
     }
 
-    private fun installWebRtcHooks(packageName: String, classLoader: ClassLoader?) {
+    private fun installWebRtcHooks(packageName: String, classLoader: ClassLoader?): Boolean {
+        var installedAny = false
         WEB_RTC_RECORD_CLASSES.forEach { className ->
             val clazz = runCatching { XposedHelpers.findClass(className, classLoader) }.getOrNull() ?: return@forEach
-            XposedBridge.log("qwulivoice: installing WebRTC nativeDataIsRecorded hook in $packageName for $className")
-            XposedBridge.hookAllMethods(clazz, "nativeDataIsRecorded", createWebRtcRecordHook(packageName, className))
-            clazz.declaredMethods
-                .filter { it.name == "initRecording" }
-                .forEach { method ->
-                    XposedBridge.hookMethod(method, createWebRtcInitHook(packageName, className))
-                }
-            clazz.declaredMethods
-                .filter { it.name == "stopRecording" || it.name == "onDestroy" }
-                .forEach { method ->
-                    XposedBridge.hookMethod(method, createWebRtcStopHook(packageName, className))
-                }
+            installedAny = installWebRtcHooksOnClass(packageName, className, clazz) || installedAny
         }
+        return installedAny
+    }
+
+    private fun installWebRtcHooksOnClass(
+        packageName: String,
+        className: String,
+        clazz: Class<*>,
+    ): Boolean {
+        val installKey = "$packageName|$className"
+        if (!installedWebRtcClasses.add(installKey)) {
+            return false
+        }
+        XposedBridge.log("qwulivoice: installing WebRTC nativeDataIsRecorded hook in $packageName for $className")
+        XposedBridge.hookAllMethods(clazz, "nativeDataIsRecorded", createWebRtcRecordHook(packageName, className))
+        clazz.declaredMethods
+            .filter { it.name == "initRecording" }
+            .forEach { method ->
+                XposedBridge.hookMethod(method, createWebRtcInitHook(packageName, className))
+            }
+        clazz.declaredMethods
+            .filter { it.name == "stopRecording" || it.name == "onDestroy" }
+            .forEach { method ->
+                XposedBridge.hookMethod(method, createWebRtcStopHook(packageName, className))
+            }
+        return true
+    }
+
+    private fun installDeferredWebRtcHooks(packageName: String, classLoader: ClassLoader?) {
+        if (classLoader == null) {
+            return
+        }
+        val watcherKey = "$packageName|${System.identityHashCode(classLoader)}|webrtc"
+        if (!installedWebRtcWatchers.add(watcherKey)) {
+            return
+        }
+
+        val hookRef = arrayOfNulls<Set<XC_MethodHook.Unhook>>(1)
+        hookRef[0] = XposedBridge.hookAllMethods(ClassLoader::class.java, "loadClass", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                if (param.thisObject !== classLoader) {
+                    return
+                }
+                val requestedName = param.args.firstOrNull() as? String ?: return
+                if (requestedName !in WEB_RTC_RECORD_CLASSES) {
+                    return
+                }
+                val loadedClass = param.result as? Class<*> ?: return
+                installWebRtcHooksOnClass(packageName, requestedName, loadedClass)
+                val allInstalled = WEB_RTC_RECORD_CLASSES.all { className ->
+                    installedWebRtcClasses.contains("$packageName|$className")
+                }
+                if (allInstalled) {
+                    hookRef[0]?.forEach { it.unhook() }
+                    installedWebRtcWatchers.remove(watcherKey)
+                }
+            }
+        })
     }
 
     private fun createWebRtcRecordHook(packageName: String, className: String) = object : XC_MethodHook() {
@@ -521,31 +575,20 @@ class AudioHookEntry : IXposedHookLoadPackage {
         }
 
     private fun installTelegramBlacklistSafetyHooks(packageName: String, classLoader: ClassLoader?) {
+        val startupSafetyGate = StartupSafetyGate()
         installBlacklistShortCircuit(
             packageName = packageName,
             classLoader = classLoader,
             className = "com.exteragram.messenger.plugins.PluginsController",
             exactMethodNames = setOf("applyBlacklist"),
+            startupSafetyGate = startupSafetyGate,
         )
         installBlacklistShortCircuit(
             packageName = packageName,
             classLoader = classLoader,
             className = "de.robv.android.xposed.XposedBridge",
             exactMethodNames = setOf("setBlacklist"),
-        )
-        installDeferredBlacklistSafety(
-            packageName = packageName,
-            classLoader = classLoader,
-            targets = listOf(
-                DeferredBlacklistTarget(
-                    className = "com.exteragram.messenger.plugins.PluginsController",
-                    exactMethodNames = setOf("applyBlacklist"),
-                ),
-                DeferredBlacklistTarget(
-                    className = "de.robv.android.xposed.XposedBridge",
-                    exactMethodNames = setOf("setBlacklist"),
-                ),
-            ),
+            startupSafetyGate = startupSafetyGate,
         )
     }
 
@@ -554,17 +597,19 @@ class AudioHookEntry : IXposedHookLoadPackage {
         classLoader: ClassLoader?,
         className: String,
         exactMethodNames: Set<String>,
+        startupSafetyGate: StartupSafetyGate? = null,
     ) {
         val clazz = runCatching {
             XposedHelpers.findClass(className, classLoader)
         }.getOrNull() ?: return
-        installBlacklistShortCircuitOnClass(packageName, clazz, exactMethodNames)
+        installBlacklistShortCircuitOnClass(packageName, clazz, exactMethodNames, startupSafetyGate)
     }
 
     private fun installBlacklistShortCircuitOnClass(
         packageName: String,
         clazz: Class<*>,
         exactMethodNames: Set<String>,
+        startupSafetyGate: StartupSafetyGate? = null,
     ) {
         val classKey = "$packageName|${clazz.name}"
         if (!installedBlacklistClasses.add(classKey)) {
@@ -574,11 +619,19 @@ class AudioHookEntry : IXposedHookLoadPackage {
         XposedBridge.log("qwulivoice: installing blacklist safety for ${clazz.name} in $packageName")
         clazz.declaredMethods
             .filter { method ->
-                method.name in exactMethodNames || method.name.contains("Blacklist", ignoreCase = true)
+                method.name in exactMethodNames
             }
             .forEach { method ->
                 XposedBridge.hookMethod(method, object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
+                        if (startupSafetyGate != null) {
+                            val elapsed = SystemClock.uptimeMillis() - startupSafetyGate.startedAtUptimeMs
+                            val invocationIndex = startupSafetyGate.shortCircuitCount.get()
+                            if (elapsed > STARTUP_BLACKLIST_WINDOW_MS || invocationIndex >= STARTUP_BLACKLIST_MAX_SHORT_CIRCUITS) {
+                                return
+                            }
+                            startupSafetyGate.shortCircuitCount.incrementAndGet()
+                        }
                         param.result = defaultValueFor((param.method as? Method)?.returnType)
                         DiagnosticsClient.reportEvent(
                             packageName = packageName,
@@ -590,36 +643,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
                     }
                 })
             }
-    }
-
-    private fun installDeferredBlacklistSafety(
-        packageName: String,
-        classLoader: ClassLoader?,
-        targets: List<DeferredBlacklistTarget>,
-    ) {
-        if (classLoader == null) {
-            return
-        }
-        val watcherKey = "$packageName|${System.identityHashCode(classLoader)}"
-        if (!installedBlacklistWatchers.add(watcherKey)) {
-            return
-        }
-
-        XposedBridge.hookAllMethods(ClassLoader::class.java, "loadClass", object : XC_MethodHook() {
-            override fun afterHookedMethod(param: MethodHookParam) {
-                if (param.thisObject !== classLoader) {
-                    return
-                }
-                val requestedName = param.args.firstOrNull() as? String ?: return
-                val target = targets.firstOrNull { it.className == requestedName } ?: return
-                val loadedClass = param.result as? Class<*> ?: return
-                installBlacklistShortCircuitOnClass(
-                    packageName = packageName,
-                    clazz = loadedClass,
-                    exactMethodNames = target.exactMethodNames,
-                )
-            }
-        })
     }
 
     private fun defaultValueFor(type: Class<*>?): Any? =
@@ -654,7 +677,15 @@ class AudioHookEntry : IXposedHookLoadPackage {
         isTelegramFamilyPackage(packageName)
 
     private fun shouldInstallWebRtcJavaHooks(packageName: String): Boolean =
-        isTelegramFamilyPackage(packageName)
+        isTelegramFamilyPackage(packageName) ||
+            packageName == "com.viber.voip" ||
+            packageName == "com.google.android.dialer" ||
+            packageName.startsWith("com.discord")
+
+    private fun shouldInstallDeferredWebRtcHooks(packageName: String): Boolean =
+        packageName == "com.viber.voip" ||
+            packageName == "com.google.android.dialer" ||
+            packageName.startsWith("com.discord")
 
     private object ConfigClient {
         private const val CACHE_WINDOW_MS = 800L
@@ -687,6 +718,10 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     private object DiagnosticsClient {
         private val lastEvents = Collections.synchronizedMap(mutableMapOf<String, Long>())
+        @Volatile
+        private var reportingDisabled = false
+        @Volatile
+        private var failureLogged = false
 
         fun reportEvent(
             packageName: String,
@@ -695,6 +730,9 @@ class AudioHookEntry : IXposedHookLoadPackage {
             rateKey: String = "$packageName|$source",
             minIntervalMs: Long = 10_000L,
         ) {
+            if (reportingDisabled) {
+                return
+            }
             val now = System.currentTimeMillis()
             val previous = synchronized(lastEvents) { lastEvents[rateKey] }
             if (previous != null && now - previous < minIntervalMs) {
@@ -712,18 +750,29 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 if (delivered) {
                     synchronized(lastEvents) { lastEvents[rateKey] = now }
                 } else {
-                    XposedBridge.log("qwulivoice: diagnostics report failed for $source in $packageName")
+                    disableReporting("file unavailable for $packageName/$source")
                 }
             }.onFailure {
-                XposedBridge.log("qwulivoice: diagnostics report failed: $it")
+                disableReporting(it.toString())
+            }
+        }
+
+        private fun disableReporting(reason: String) {
+            reportingDisabled = true
+            if (!failureLogged) {
+                failureLogged = true
+                XposedBridge.log("qwulivoice: disabling target diagnostics in this process: $reason")
             }
         }
     }
 
     companion object {
+        private const val STARTUP_BLACKLIST_WINDOW_MS = 15_000L
+        private const val STARTUP_BLACKLIST_MAX_SHORT_CIRCUITS = 6
         private val installedPackages = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedBlacklistClasses = Collections.synchronizedSet(mutableSetOf<String>())
-        private val installedBlacklistWatchers = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedWebRtcClasses = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedWebRtcWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val WEB_RTC_RECORD_CLASSES = listOf(
             "org.webrtc.audio.WebRtcAudioRecord",
             "org.webrtc.voiceengine.WebRtcAudioRecord",
@@ -731,7 +780,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
     }
 }
 
-private data class DeferredBlacklistTarget(
-    val className: String,
-    val exactMethodNames: Set<String>,
+private data class StartupSafetyGate(
+    val startedAtUptimeMs: Long = SystemClock.uptimeMillis(),
+    val shortCircuitCount: AtomicInteger = AtomicInteger(0),
 )

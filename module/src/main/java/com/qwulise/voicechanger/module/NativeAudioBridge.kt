@@ -52,6 +52,7 @@ object NativeAudioBridge {
 
     private val nativeLoaded = AtomicBoolean(false)
     private val lastEvents = Collections.synchronizedMap(mutableMapOf<String, Long>())
+    private val reportingFailureLogged = AtomicBoolean(false)
 
     @Volatile
     private var processPackageName: String = ""
@@ -68,8 +69,13 @@ object NativeAudioBridge {
     @Volatile
     private var cachedSoundpad: NativeSoundpadSnapshot = NativeSoundpadSnapshot.disabled()
 
+    @Volatile
+    private var reportingDisabled: Boolean = false
+
     fun attachToProcess(packageName: String) {
         processPackageName = packageName
+        reportingDisabled = false
+        reportingFailureLogged.set(false)
         runCatching {
             ensureLoaded()
         }.onFailure {
@@ -137,7 +143,7 @@ object NativeAudioBridge {
         rateKey: String,
         minIntervalMs: Long,
     ) {
-        if (packageName.isBlank() || source.isBlank()) {
+        if (packageName.isBlank() || source.isBlank() || reportingDisabled) {
             return
         }
 
@@ -160,10 +166,17 @@ object NativeAudioBridge {
             if (delivered) {
                 synchronized(lastEvents) { lastEvents[rateKey] = now }
             } else {
-                XposedBridge.log("qwulivoice: native diagnostics file unavailable")
+                disableReporting("native diagnostics file unavailable")
             }
         }.onFailure {
-            XposedBridge.log("qwulivoice: native diagnostics report failed: $it")
+            disableReporting("native diagnostics report failed: $it")
+        }
+    }
+
+    private fun disableReporting(reason: String) {
+        reportingDisabled = true
+        if (reportingFailureLogged.compareAndSet(false, true)) {
+            XposedBridge.log("qwulivoice: disabling native diagnostics in this process: $reason")
         }
     }
 
