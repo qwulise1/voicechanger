@@ -696,7 +696,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
             packageName.startsWith("com.discord")
 
     private fun shouldInstallTelegramPluginSafety(packageName: String): Boolean =
-        packageName == "org.telegram.messenger" || packageName.startsWith("com.exteragram")
+        packageName.startsWith("com.exteragram")
 
     private fun shouldInstallDeferredWebRtcHooks(packageName: String): Boolean =
         packageName == "com.viber.voip" ||
