@@ -2,6 +2,7 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <jni.h>
+#include <sys/types.h>
 
 #include <algorithm>
 #include <chrono>
@@ -36,6 +37,25 @@ using AAudioOpenStreamFn = aaudio_result_t (*)(AAudioStreamBuilder *builder, AAu
 using AAudioSetDataCallbackFn = aaudio_result_t (*)(AAudioStreamBuilder *builder, AAudioStream_dataCallback callback, void *userData);
 using AAudioStreamCloseFn = aaudio_result_t (*)(AAudioStream *stream);
 using AAudioBuilderDeleteFn = aaudio_result_t (*)(AAudioStreamBuilder *builder);
+using NativeAudioRecordReadFn = ssize_t (*)(void *thiz, void *buffer, size_t userSize, bool blocking);
+using NativeAudioRecordCtorFn = void (*)(
+    void *thiz,
+    int32_t audioSource,
+    uint32_t sampleRate,
+    int32_t audioFormat,
+    uint32_t channelMask,
+    const void *attributionSourceState,
+    size_t frameCount,
+    const void *callback,
+    uint32_t notificationFrames,
+    int32_t sessionId,
+    int32_t transferType,
+    uint32_t inputFlags,
+    const void *attributes,
+    int32_t selectedDeviceId,
+    int32_t micDirection,
+    float micFieldDimension
+);
 using JniWebRtcAudioRecordedFn = void (*)(JNIEnv *env, jobject thiz, jlong nativeAudioRecord, jint byteCount, jlong captureTimestampNs);
 using JniWebRtcVoiceEngineRecordedFn = void (*)(JNIEnv *env, jobject thiz, jint byteCount, jlong nativeAudioRecord);
 
@@ -83,12 +103,22 @@ struct CallbackBinding {
     void *userData = nullptr;
 };
 
+struct NativeAudioRecordInfo {
+    int sampleRate = 48000;
+    uint32_t channelMask = 0;
+    int format = 1;
+    int source = 0;
+};
+
 HookFunType gHookFunction = nullptr;
 AAudioStreamReadFn gBackupRead = nullptr;
 AAudioOpenStreamFn gBackupOpenStream = nullptr;
 AAudioSetDataCallbackFn gBackupSetDataCallback = nullptr;
 AAudioStreamCloseFn gBackupClose = nullptr;
 AAudioBuilderDeleteFn gBackupBuilderDelete = nullptr;
+NativeAudioRecordReadFn gBackupNativeAudioRecordRead = nullptr;
+NativeAudioRecordCtorFn gBackupNativeAudioRecordCtor1 = nullptr;
+NativeAudioRecordCtorFn gBackupNativeAudioRecordCtor2 = nullptr;
 JniWebRtcAudioRecordedFn gBackupWebRtcAudioRecorded = nullptr;
 JniWebRtcVoiceEngineRecordedFn gBackupWebRtcVoiceRecorded = nullptr;
 
@@ -122,6 +152,8 @@ std::unordered_map<AAudioStreamBuilder *, bool> gBuilderUsesCallback;
 std::unordered_map<AAudioStreamBuilder *, CallbackBinding> gBuilderCallbacks;
 std::unordered_map<AAudioStream *, CallbackBinding> gStreamCallbacks;
 std::unordered_map<int, StreamState> gWebRtcStates;
+std::unordered_map<void *, StreamState> gNativeRecordStates;
+std::unordered_map<void *, NativeAudioRecordInfo> gNativeAudioRecords;
 std::string gProcessPackageName;
 bool gHooksEnabled = false;
 
@@ -132,6 +164,9 @@ bool gCloseHookInstalled = false;
 bool gBuilderDeleteHookInstalled = false;
 bool gWebRtcAudioHookInstalled = false;
 bool gWebRtcVoiceHookInstalled = false;
+bool gNativeAudioReadHookInstalled = false;
+bool gNativeAudioCtor1HookInstalled = false;
+bool gNativeAudioCtor2HookInstalled = false;
 
 std::string currentPackageName();
 void processInt16(
@@ -826,6 +861,33 @@ std::string formatLabel(aaudio_format_t format) {
     }
 }
 
+int nativeChannelCount(uint32_t channelMask) {
+    const int count = __builtin_popcount(channelMask);
+    return count > 0 ? count : 1;
+}
+
+bool isNativePcm16(int format) {
+    return format == 1;
+}
+
+bool isNativePcmFloat(int format) {
+    return format == 5;
+}
+
+void registerNativeAudioRecord(void *record, int32_t audioSource, uint32_t sampleRate, int32_t audioFormat, uint32_t channelMask) {
+    if (record == nullptr) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(gStateMutex);
+    NativeAudioRecordInfo info;
+    info.source = audioSource;
+    info.sampleRate = sampleRate > 0 ? static_cast<int>(sampleRate) : 48000;
+    info.format = audioFormat;
+    info.channelMask = channelMask;
+    gNativeAudioRecords[record] = info;
+    gNativeRecordStates.try_emplace(record, StreamState{});
+}
+
 bool hooksEnabled() {
     std::lock_guard<std::mutex> lock(gStateMutex);
     return gHooksEnabled && !gProcessPackageName.empty();
@@ -878,6 +940,205 @@ void installJniHooks(void *handle) {
         reinterpret_cast<void *>(hookedWebRtcVoiceNativeDataIsRecorded),
         reinterpret_cast<void **>(&gBackupWebRtcVoiceRecorded),
         &gWebRtcVoiceHookInstalled
+    );
+}
+
+void hookedNativeAudioRecordCtor1(
+    void *thiz,
+    int32_t audioSource,
+    uint32_t sampleRate,
+    int32_t audioFormat,
+    uint32_t channelMask,
+    const void *attributionSourceState,
+    size_t frameCount,
+    const void *callback,
+    uint32_t notificationFrames,
+    int32_t sessionId,
+    int32_t transferType,
+    uint32_t inputFlags,
+    const void *attributes,
+    int32_t selectedDeviceId,
+    int32_t micDirection,
+    float micFieldDimension
+) {
+    if (gBackupNativeAudioRecordCtor1 != nullptr) {
+        gBackupNativeAudioRecordCtor1(
+            thiz,
+            audioSource,
+            sampleRate,
+            audioFormat,
+            channelMask,
+            attributionSourceState,
+            frameCount,
+            callback,
+            notificationFrames,
+            sessionId,
+            transferType,
+            inputFlags,
+            attributes,
+            selectedDeviceId,
+            micDirection,
+            micFieldDimension
+        );
+    }
+    registerNativeAudioRecord(thiz, audioSource, sampleRate, audioFormat, channelMask);
+}
+
+void hookedNativeAudioRecordCtor2(
+    void *thiz,
+    int32_t audioSource,
+    uint32_t sampleRate,
+    int32_t audioFormat,
+    uint32_t channelMask,
+    const void *attributionSourceState,
+    size_t frameCount,
+    const void *callback,
+    uint32_t notificationFrames,
+    int32_t sessionId,
+    int32_t transferType,
+    uint32_t inputFlags,
+    const void *attributes,
+    int32_t selectedDeviceId,
+    int32_t micDirection,
+    float micFieldDimension
+) {
+    if (gBackupNativeAudioRecordCtor2 != nullptr) {
+        gBackupNativeAudioRecordCtor2(
+            thiz,
+            audioSource,
+            sampleRate,
+            audioFormat,
+            channelMask,
+            attributionSourceState,
+            frameCount,
+            callback,
+            notificationFrames,
+            sessionId,
+            transferType,
+            inputFlags,
+            attributes,
+            selectedDeviceId,
+            micDirection,
+            micFieldDimension
+        );
+    }
+    registerNativeAudioRecord(thiz, audioSource, sampleRate, audioFormat, channelMask);
+}
+
+ssize_t hookedNativeAudioRecordRead(void *thiz, void *buffer, size_t userSize, bool blocking) {
+    if (gBackupNativeAudioRecordRead == nullptr) {
+        return -1;
+    }
+
+    const ssize_t result = gBackupNativeAudioRecordRead(thiz, buffer, userSize, blocking);
+    if (result <= 0 || thiz == nullptr || buffer == nullptr) {
+        return result;
+    }
+
+    const std::string packageName = currentPackageName();
+    if (packageName.empty()) {
+        return result;
+    }
+
+    const NativeConfigSnapshot config = loadConfigSnapshot(packageName);
+    const NativeSoundpadSnapshot soundpad = loadSoundpadSnapshot();
+    const bool applyVoice = config.valid && config.enabled && config.allowed;
+    const bool applySoundpad = soundpad.valid && soundpad.active;
+    if (!applyVoice && !applySoundpad) {
+        return result;
+    }
+
+    NativeAudioRecordInfo info;
+    {
+        std::lock_guard<std::mutex> lock(gStateMutex);
+        const auto iterator = gNativeAudioRecords.find(thiz);
+        if (iterator != gNativeAudioRecords.end()) {
+            info = iterator->second;
+        }
+    }
+
+    const int sampleRate = info.sampleRate > 0 ? info.sampleRate : 48000;
+    const int channelCount = nativeChannelCount(info.channelMask);
+
+    bool applied = false;
+    {
+        std::lock_guard<std::mutex> lock(gStateMutex);
+        StreamState &state = gNativeRecordStates[thiz];
+        if (isNativePcm16(info.format)) {
+            const int frameCount = static_cast<int>(result) / static_cast<int>(sizeof(int16_t) * channelCount);
+            if (frameCount > 0) {
+                processInt16(
+                    static_cast<int16_t *>(buffer),
+                    frameCount,
+                    channelCount,
+                    sampleRate,
+                    applyVoice ? &config : nullptr,
+                    applySoundpad ? &soundpad : nullptr,
+                    state
+                );
+                applied = true;
+            }
+        } else if (isNativePcmFloat(info.format)) {
+            const int frameCount = static_cast<int>(result) / static_cast<int>(sizeof(float) * channelCount);
+            if (frameCount > 0) {
+                processFloat(
+                    static_cast<float *>(buffer),
+                    frameCount,
+                    channelCount,
+                    sampleRate,
+                    applyVoice ? &config : nullptr,
+                    applySoundpad ? &soundpad : nullptr,
+                    state
+                );
+                applied = true;
+            }
+        }
+    }
+
+    if (applied) {
+        reportEvent(
+            packageName,
+            "Native.AudioRecord.read",
+            "Applied libaudioclient hook bytes=" + std::to_string(result) +
+                " rate=" + std::to_string(sampleRate) + "Hz channels=" + std::to_string(channelCount) +
+                " format=" + std::to_string(info.format) +
+                " source=" + std::to_string(info.source) +
+                " mode=" + (applyVoice ? config.modeId : "original") +
+                " gain=" + std::to_string(applyVoice ? config.micGainPercent : 0) +
+                "% soundpad=" + (applySoundpad ? soundpad.pcmPath : "off"),
+            false,
+            packageName + "|Native.AudioRecord.read|apply",
+            12000
+        );
+    }
+
+    return result;
+}
+
+void installAudioClientHooks(void *handle) {
+    if (!hooksEnabled()) {
+        return;
+    }
+    installHookIfPresent(
+        handle,
+        "_ZN7android11AudioRecord4readEPvmb",
+        reinterpret_cast<void *>(hookedNativeAudioRecordRead),
+        reinterpret_cast<void **>(&gBackupNativeAudioRecordRead),
+        &gNativeAudioReadHookInstalled
+    );
+    installHookIfPresent(
+        handle,
+        "_ZN7android11AudioRecordC1E14audio_source_tj14audio_format_t20audio_channel_mask_tRKNS_7content22AttributionSourceStateEmRKNS_2wpINS0_20IAudioRecordCallbackEEEj15audio_session_tNS0_13transfer_typeE19audio_input_flags_tPK18audio_attributes_ti28audio_microphone_direction_tf",
+        reinterpret_cast<void *>(hookedNativeAudioRecordCtor1),
+        reinterpret_cast<void **>(&gBackupNativeAudioRecordCtor1),
+        &gNativeAudioCtor1HookInstalled
+    );
+    installHookIfPresent(
+        handle,
+        "_ZN7android11AudioRecordC2E14audio_source_tj14audio_format_t20audio_channel_mask_tRKNS_7content22AttributionSourceStateEmRKNS_2wpINS0_20IAudioRecordCallbackEEEj15audio_session_tNS0_13transfer_typeE19audio_input_flags_tPK18audio_attributes_ti28audio_microphone_direction_tf",
+        reinterpret_cast<void *>(hookedNativeAudioRecordCtor2),
+        reinterpret_cast<void **>(&gBackupNativeAudioRecordCtor2),
+        &gNativeAudioCtor2HookInstalled
     );
 }
 
@@ -1178,6 +1439,9 @@ void onLibraryLoaded(const char *name, void *handle) {
     if (name != nullptr && endsWith(name, "libaaudio.so")) {
         installAAudioHooks(handle);
     }
+    if (name != nullptr && endsWith(name, "libaudioclient.so")) {
+        installAudioClientHooks(handle);
+    }
 }
 
 }  // namespace
@@ -1211,6 +1475,8 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
     {
         std::lock_guard<std::mutex> lock(gStateMutex);
         gWebRtcStates.clear();
+        gNativeRecordStates.clear();
+        gNativeAudioRecords.clear();
     }
 
     logLine(ANDROID_LOG_INFO, std::string("Attached native bridge to ") + attachedPackage);
@@ -1218,8 +1484,10 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
     if (hooksEnabled()) {
         const char *preloadedLibraries[] = {
             "libaaudio.so",
+            "libaudioclient.so",
             "libdiscord.so",
             "libjingle_peerconnection_so.so",
+            "libVoipEngineNative.so",
             "libtmessages.49.so",
             "libtmessages.so",
         };
@@ -1232,6 +1500,9 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
             installJniHooks(preloadedHandle);
             if (std::string_view(libraryName) == "libaaudio.so") {
                 installAAudioHooks(preloadedHandle);
+            }
+            if (std::string_view(libraryName) == "libaudioclient.so") {
+                installAudioClientHooks(preloadedHandle);
             }
         }
 #endif

@@ -21,7 +21,7 @@ object HookBridge {
     private val callRecorderKeys = Collections.synchronizedSet(mutableSetOf<Int>())
 
     fun activeTargets(): List<String> = listOf(
-        "Safe-mode AudioRecord.read(...) Java hook",
+        "Native AudioRecord::read hook via libaudioclient",
         "WebRTC nativeDataIsRecorded direct-buffer hook",
         "AAudio native read/callback hook",
         "Root-file shared config",
@@ -30,10 +30,9 @@ object HookBridge {
     )
 
     fun plannedTargets(): List<String> = listOf(
-        "Re-enable lifecycle hooks after Telegram crash isolation",
-        "Experimental AAudio native layer re-enable after runtime validation",
-        "AAudio input callback wrapper",
-        "Oboe wrapper and callback path",
+        "MediaRecorder/voice-note fallback path",
+        "OpenSLES and vendor call paths",
+        "AAudio input callback wrapper hardening",
         "Selected app-specific native pipelines",
     )
 

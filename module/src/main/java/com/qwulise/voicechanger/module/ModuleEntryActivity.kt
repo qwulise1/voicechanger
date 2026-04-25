@@ -28,7 +28,7 @@ class ModuleEntryActivity : AppCompatActivity() {
         }
 
         column.addView(title("qwulivoice"))
-        column.addView(body("Это root/LSPosed-часть qwulivoice beta. Настройки находятся в обычном экране приложения, а список приложений выбирается только в LSPosed. Нативный слой сейчас удержан в experimental-режиме ради стабильного старта приложений."))
+        column.addView(body("Это root/LSPosed-часть qwulivoice beta. Настройки находятся в обычном экране приложения, а список приложений выбирается только в LSPosed. Основной аудиопуть сейчас смещен в нативный слой, чтобы стабильнее работать в модах Telegram и ближе подойти к глобальному захвату микрофона."))
         column.addView(panel("Включи в LSPosed").apply {
             addView(body("Рекомендуемый scope, который модуль также отдает самому LSPosed:"))
             addView(mono(resources.getStringArray(R.array.recommended_scopes).joinToString("\n") { "• $it" }))

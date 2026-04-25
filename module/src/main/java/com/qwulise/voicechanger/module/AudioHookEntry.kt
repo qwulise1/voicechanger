@@ -1,7 +1,6 @@
 package com.qwulise.voicechanger.module
 
 import android.media.AudioRecord
-import android.os.SystemClock
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
 import com.qwulise.voicechanger.core.VoiceConfig
@@ -12,8 +11,6 @@ import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.nio.ByteBuffer
 import java.util.Collections
-import java.lang.reflect.Method
-import java.util.concurrent.atomic.AtomicInteger
 
 class AudioHookEntry : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
@@ -33,10 +30,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }
         }
 
-        if (usesTelegramBlacklistSafety(packageName)) {
-            installTelegramBlacklistSafetyHooks(packageName, lpparam.classLoader)
-        }
-
         if (shouldAttachNative(packageName)) {
             runCatching {
                 NativeAudioBridge.attachToProcess(packageName)
@@ -45,6 +38,11 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }
         } else {
             XposedBridge.log("qwulivoice: native hook skipped for $packageName")
+        }
+
+        if (usesNativeOnlyHooks(packageName)) {
+            XposedBridge.log("qwulivoice: native-only hook mode in $packageName")
+            return
         }
 
         if (usesTelegramScopedHooks(packageName)) {
@@ -453,7 +451,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
         if (classLoader == null) {
             return
         }
-        val watcherKey = "$packageName|${System.identityHashCode(classLoader)}|webrtc"
+        val watcherKey = "$packageName|webrtc"
         if (!installedWebRtcWatchers.add(watcherKey)) {
             return
         }
@@ -461,9 +459,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
         val hookRef = arrayOfNulls<Set<XC_MethodHook.Unhook>>(1)
         hookRef[0] = XposedBridge.hookAllMethods(ClassLoader::class.java, "loadClass", object : XC_MethodHook() {
             override fun afterHookedMethod(param: MethodHookParam) {
-                if (param.thisObject !== classLoader) {
-                    return
-                }
                 val requestedName = param.args.firstOrNull() as? String ?: return
                 if (requestedName !in WEB_RTC_RECORD_CLASSES) {
                     return
@@ -574,104 +569,21 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }.getOrNull()?.takeIf { it > 0 }
         }
 
-    private fun installTelegramBlacklistSafetyHooks(packageName: String, classLoader: ClassLoader?) {
-        val startupSafetyGate = StartupSafetyGate()
-        installBlacklistShortCircuit(
-            packageName = packageName,
-            classLoader = classLoader,
-            className = "com.exteragram.messenger.plugins.PluginsController",
-            exactMethodNames = setOf("applyBlacklist"),
-            startupSafetyGate = startupSafetyGate,
-        )
-        installBlacklistShortCircuit(
-            packageName = packageName,
-            classLoader = classLoader,
-            className = "de.robv.android.xposed.XposedBridge",
-            exactMethodNames = setOf("setBlacklist"),
-            startupSafetyGate = startupSafetyGate,
-        )
-    }
-
-    private fun installBlacklistShortCircuit(
-        packageName: String,
-        classLoader: ClassLoader?,
-        className: String,
-        exactMethodNames: Set<String>,
-        startupSafetyGate: StartupSafetyGate? = null,
-    ) {
-        val clazz = runCatching {
-            XposedHelpers.findClass(className, classLoader)
-        }.getOrNull() ?: return
-        installBlacklistShortCircuitOnClass(packageName, clazz, exactMethodNames, startupSafetyGate)
-    }
-
-    private fun installBlacklistShortCircuitOnClass(
-        packageName: String,
-        clazz: Class<*>,
-        exactMethodNames: Set<String>,
-        startupSafetyGate: StartupSafetyGate? = null,
-    ) {
-        val classKey = "$packageName|${clazz.name}"
-        if (!installedBlacklistClasses.add(classKey)) {
-            return
-        }
-
-        XposedBridge.log("qwulivoice: installing blacklist safety for ${clazz.name} in $packageName")
-        clazz.declaredMethods
-            .filter { method ->
-                method.name in exactMethodNames
-            }
-            .forEach { method ->
-                XposedBridge.hookMethod(method, object : XC_MethodHook() {
-                    override fun beforeHookedMethod(param: MethodHookParam) {
-                        if (startupSafetyGate != null) {
-                            val elapsed = SystemClock.uptimeMillis() - startupSafetyGate.startedAtUptimeMs
-                            val invocationIndex = startupSafetyGate.shortCircuitCount.get()
-                            if (elapsed > STARTUP_BLACKLIST_WINDOW_MS || invocationIndex >= STARTUP_BLACKLIST_MAX_SHORT_CIRCUITS) {
-                                return
-                            }
-                            startupSafetyGate.shortCircuitCount.incrementAndGet()
-                        }
-                        param.result = defaultValueFor((param.method as? Method)?.returnType)
-                        DiagnosticsClient.reportEvent(
-                            packageName = packageName,
-                            source = "Telegram.startupSafety",
-                            detail = "Short-circuited ${clazz.name.substringAfterLast('.')}.${method.name}",
-                            rateKey = "$packageName|${clazz.name}|${method.name}",
-                            minIntervalMs = 20_000L,
-                        )
-                    }
-                })
-            }
-    }
-
-    private fun defaultValueFor(type: Class<*>?): Any? =
-        when (type) {
-            null, Void.TYPE -> null
-            java.lang.Boolean.TYPE -> false
-            java.lang.Integer.TYPE -> 0
-            java.lang.Long.TYPE -> 0L
-            java.lang.Float.TYPE -> 0f
-            java.lang.Double.TYPE -> 0.0
-            java.lang.Short.TYPE -> 0.toShort()
-            java.lang.Byte.TYPE -> 0.toByte()
-            java.lang.Character.TYPE -> 0.toChar()
-            else -> null
-        }
-
     private fun isTelegramFamilyPackage(packageName: String): Boolean =
         packageName.startsWith("org.telegram.messenger") ||
             packageName.startsWith("com.exteragram")
 
     private fun usesTelegramScopedHooks(packageName: String): Boolean =
-        packageName.startsWith("org.telegram.messenger") ||
-            packageName.startsWith("com.exteragram")
+        isTelegramFamilyPackage(packageName) && !usesNativeOnlyHooks(packageName)
 
-    private fun usesTelegramBlacklistSafety(packageName: String): Boolean =
-        packageName == "org.telegram.messenger"
+    private fun usesNativeOnlyHooks(packageName: String): Boolean =
+        packageName == "org.telegram.messenger" ||
+            packageName.startsWith("com.exteragram") ||
+            packageName == "com.viber.voip" ||
+            packageName.startsWith("com.discord")
 
     private fun shouldAttachNative(packageName: String): Boolean =
-        !isTelegramFamilyPackage(packageName)
+        usesNativeOnlyHooks(packageName) || !isTelegramFamilyPackage(packageName)
 
     private fun shouldRestrictToMainProcess(packageName: String): Boolean =
         isTelegramFamilyPackage(packageName)
@@ -767,10 +679,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
     }
 
     companion object {
-        private const val STARTUP_BLACKLIST_WINDOW_MS = 15_000L
-        private const val STARTUP_BLACKLIST_MAX_SHORT_CIRCUITS = 6
         private val installedPackages = Collections.synchronizedSet(mutableSetOf<String>())
-        private val installedBlacklistClasses = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedWebRtcClasses = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedWebRtcWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val WEB_RTC_RECORD_CLASSES = listOf(
@@ -779,8 +688,3 @@ class AudioHookEntry : IXposedHookLoadPackage {
         )
     }
 }
-
-private data class StartupSafetyGate(
-    val startedAtUptimeMs: Long = SystemClock.uptimeMillis(),
-    val shortCircuitCount: AtomicInteger = AtomicInteger(0),
-)
