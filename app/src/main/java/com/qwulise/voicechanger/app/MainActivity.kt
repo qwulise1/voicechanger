@@ -10,7 +10,6 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -80,7 +79,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var themeModeFlow: FlowLayout
     private lateinit var accentFlow: FlowLayout
-    private lateinit var monetSwitch: PillSwitch
     private lateinit var overlayOpacityValue: TextView
     private lateinit var overlayOpacitySlider: GlassSlider
     private lateinit var overlaySizeValue: TextView
@@ -250,7 +248,6 @@ class MainActivity : AppCompatActivity() {
         boostSlider.progress = config.micGainPercent
         soundpadMixSlider.progress = soundpadPlayback.mixPercent
         soundpadLoopSwitch.checked = soundpadPlayback.looping
-        monetSwitch.checked = uiSettings.useMonet
         overlayOpacitySlider.progress = uiSettings.overlayOpacityPercent
         overlaySizeSlider.progress = uiSettings.overlaySizePercent
         renderModeChips()
@@ -309,7 +306,7 @@ class MainActivity : AppCompatActivity() {
     private fun settingsPage(): ScrollView =
         pageScroll().apply {
             addView(pageColumn().apply {
-                addView(pageIntro("Настройки", "Светлая, темная, monet, цвета и живые логи модуля в одном месте."))
+                addView(pageIntro("Настройки", "Тема, акцент, overlay и живые логи модуля в одном месте."))
                 addView(themeSettingsCard())
                 addView(logsCard())
             })
@@ -614,7 +611,7 @@ class MainActivity : AppCompatActivity() {
         setPadding(dp(18), dp(18), dp(18), dp(18))
         layoutParams = panelParams(14)
         addView(title("Оформление", 22f))
-        addView(body("Отдельная вкладка под тему, акцент и системные цвета.").apply {
+        addView(body("Отдельная вкладка под тему, акцент, overlay и логи.").apply {
             setTextColor(palette.secondaryText)
             setPadding(0, dp(6), 0, dp(18))
         })
@@ -631,20 +628,6 @@ class MainActivity : AppCompatActivity() {
                 verticalSpacing = dp(8)
             }
             addView(accentFlow)
-        })
-        addView(settingSwitchBlock("Monet", "Использовать системные dynamic-цвета, если Android умеет.") { switch ->
-            monetSwitch = switch.apply {
-                setColors(
-                    onColor = palette.accent,
-                    offColor = palette.switchOff,
-                    thumbColor = Color.WHITE,
-                )
-                onCheckedChange = {
-                    if (!suppressUiCallbacks) {
-                        updateUiSettings(uiSettings.copy(useMonet = checked))
-                    }
-                }
-            }
         })
         addView(settingBlock("Overlay", "Прозрачность плавающей кнопки soundpad и панели выбора").apply {
             overlayOpacityValue = body("").apply {
@@ -1775,31 +1758,6 @@ class MainActivity : AppCompatActivity() {
         val preset = uiSettings.accentPreset
         val fallbackAccent = if (dark) preset.accentDark else preset.accentLight
         val fallbackAlt = if (dark) preset.altDark else preset.altLight
-        if (uiSettings.useMonet && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val monetBundle = runCatching {
-                AccentBundle(
-                    accent = resources.getColor(
-                        if (dark) android.R.color.system_accent1_300 else android.R.color.system_accent1_600,
-                        theme,
-                    ),
-                    alt = resources.getColor(
-                        if (dark) android.R.color.system_accent2_300 else android.R.color.system_accent2_600,
-                        theme,
-                    ),
-                    hero = resources.getColor(
-                        if (dark) android.R.color.system_accent3_300 else android.R.color.system_accent3_500,
-                        theme,
-                    ),
-                    warning = resources.getColor(
-                        if (dark) android.R.color.system_accent1_200 else android.R.color.system_accent1_700,
-                        theme,
-                    ),
-                )
-            }.getOrNull()
-            if (monetBundle != null) {
-                return monetBundle
-            }
-        }
         return AccentBundle(
             accent = fallbackAccent,
             alt = fallbackAlt,
@@ -1854,7 +1812,7 @@ class MainActivity : AppCompatActivity() {
         HOME("Дом", "⌂"),
         VOICE("Голос", "≈"),
         SOUNDPAD("Pad", "♫"),
-        SETTINGS("Тема", "⚙"),
+        SETTINGS("Стиль", "⚙"),
     }
 
     class PillSwitch(context: Context) : View(context) {

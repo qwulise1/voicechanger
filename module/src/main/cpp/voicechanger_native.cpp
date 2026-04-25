@@ -12,7 +12,9 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -154,6 +156,7 @@ std::unordered_map<AAudioStream *, CallbackBinding> gStreamCallbacks;
 std::unordered_map<int, StreamState> gWebRtcStates;
 std::unordered_map<void *, StreamState> gNativeRecordStates;
 std::unordered_map<void *, NativeAudioRecordInfo> gNativeAudioRecords;
+std::unordered_set<std::string> gLoggedLibraryEvents;
 std::string gProcessPackageName;
 bool gHooksEnabled = false;
 
@@ -192,6 +195,27 @@ void logLine(int priority, const std::string &message) {
 bool endsWith(std::string_view value, std::string_view suffix) {
     return value.size() >= suffix.size() &&
            value.substr(value.size() - suffix.size()) == suffix;
+}
+
+bool isInterestingLibrary(std::string_view name) {
+    return endsWith(name, "libaaudio.so") ||
+           endsWith(name, "libaudioclient.so") ||
+           endsWith(name, "libdiscord.so") ||
+           endsWith(name, "libjingle_peerconnection_so.so") ||
+           endsWith(name, "libVoipEngineNative.so") ||
+           endsWith(name, "libtmessages.49.so") ||
+           endsWith(name, "libtmessages.so");
+}
+
+void logLibraryEventOnce(std::string key, std::string message) {
+    bool shouldLog = false;
+    {
+        std::lock_guard<std::mutex> lock(gStateMutex);
+        shouldLog = gLoggedLibraryEvents.insert(std::move(key)).second;
+    }
+    if (shouldLog) {
+        logLine(ANDROID_LOG_INFO, message);
+    }
 }
 
 JNIEnv *getEnv(bool *didAttach) {
@@ -1431,16 +1455,93 @@ void installAAudioHooks(void *handle) {
     installHookIfPresent(handle, "AAudioStreamBuilder_openStream", reinterpret_cast<void *>(hookedAAudioOpenStream), reinterpret_cast<void **>(&gBackupOpenStream), &gOpenHookInstalled);
 }
 
+void installHooksForLibraryHandle(
+    const char *libraryName,
+    void *handle,
+    bool installJni,
+    bool installAAudio,
+    bool installAudioClient
+) {
+    if (handle == nullptr) {
+        return;
+    }
+    if (libraryName != nullptr && isInterestingLibrary(libraryName)) {
+        logLibraryEventOnce(
+            std::string("seen|") + libraryName,
+            std::string("Observed native library load: ") + libraryName
+        );
+    }
+    if (installJni) {
+        installJniHooks(handle);
+    }
+    if (installAAudio) {
+        installAAudioHooks(handle);
+    }
+    if (installAudioClient) {
+        installAudioClientHooks(handle);
+    }
+}
+
+void tryInstallHooksForLibrary(
+    const char *libraryName,
+    bool allowExplicitLoad,
+    bool installJni,
+    bool installAAudio,
+    bool installAudioClient
+) {
+    if (!hooksEnabled() || libraryName == nullptr) {
+        return;
+    }
+
+    void *handle = nullptr;
+#ifdef RTLD_NOLOAD
+    handle = dlopen(libraryName, RTLD_NOW | RTLD_NOLOAD);
+#endif
+    if (handle == nullptr && allowExplicitLoad) {
+        handle = dlopen(libraryName, RTLD_NOW);
+        if (handle != nullptr) {
+            logLibraryEventOnce(
+                std::string("explicit|") + libraryName,
+                std::string("Explicitly loaded native library for hook install: ") + libraryName
+            );
+        }
+    }
+    if (handle == nullptr) {
+        return;
+    }
+
+    installHooksForLibraryHandle(
+        libraryName,
+        handle,
+        installJni,
+        installAAudio,
+        installAudioClient
+    );
+}
+
 void onLibraryLoaded(const char *name, void *handle) {
     if (!hooksEnabled() || handle == nullptr) {
         return;
     }
-    installJniHooks(handle);
-    if (name != nullptr && endsWith(name, "libaaudio.so")) {
-        installAAudioHooks(handle);
+    const bool isAAudioLibrary = name != nullptr && endsWith(name, "libaaudio.so");
+    const bool isAudioClientLibrary = name != nullptr && endsWith(name, "libaudioclient.so");
+    installHooksForLibraryHandle(
+        name,
+        handle,
+        true,
+        isAAudioLibrary,
+        isAudioClientLibrary
+    );
+
+    if (name != nullptr && endsWith(name, "libVoipEngineNative.so")) {
+        tryInstallHooksForLibrary("libjingle_peerconnection_so.so", false, true, false, false);
+        tryInstallHooksForLibrary("libaudioclient.so", true, false, false, true);
     }
-    if (name != nullptr && endsWith(name, "libaudioclient.so")) {
-        installAudioClientHooks(handle);
+    if (name != nullptr && endsWith(name, "libdiscord.so")) {
+        tryInstallHooksForLibrary("libaudioclient.so", true, false, false, true);
+    }
+    if (name != nullptr && (endsWith(name, "libtmessages.49.so") || endsWith(name, "libtmessages.so"))) {
+        tryInstallHooksForLibrary("libaudioclient.so", true, false, false, true);
     }
 }
 
@@ -1477,35 +1578,19 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
         gWebRtcStates.clear();
         gNativeRecordStates.clear();
         gNativeAudioRecords.clear();
+        gLoggedLibraryEvents.clear();
     }
 
     logLine(ANDROID_LOG_INFO, std::string("Attached native bridge to ") + attachedPackage);
 
     if (hooksEnabled()) {
-        const char *preloadedLibraries[] = {
-            "libaaudio.so",
-            "libaudioclient.so",
-            "libdiscord.so",
-            "libjingle_peerconnection_so.so",
-            "libVoipEngineNative.so",
-            "libtmessages.49.so",
-            "libtmessages.so",
-        };
-#ifdef RTLD_NOLOAD
-        for (const char *libraryName : preloadedLibraries) {
-            void *preloadedHandle = dlopen(libraryName, RTLD_NOW | RTLD_NOLOAD);
-            if (preloadedHandle == nullptr) {
-                continue;
-            }
-            installJniHooks(preloadedHandle);
-            if (std::string_view(libraryName) == "libaaudio.so") {
-                installAAudioHooks(preloadedHandle);
-            }
-            if (std::string_view(libraryName) == "libaudioclient.so") {
-                installAudioClientHooks(preloadedHandle);
-            }
-        }
-#endif
+        tryInstallHooksForLibrary("libaaudio.so", true, false, true, false);
+        tryInstallHooksForLibrary("libaudioclient.so", true, false, false, true);
+        tryInstallHooksForLibrary("libdiscord.so", false, true, false, false);
+        tryInstallHooksForLibrary("libjingle_peerconnection_so.so", false, true, false, false);
+        tryInstallHooksForLibrary("libVoipEngineNative.so", false, false, false, false);
+        tryInstallHooksForLibrary("libtmessages.49.so", false, true, false, false);
+        tryInstallHooksForLibrary("libtmessages.so", false, true, false, false);
     }
 }
 

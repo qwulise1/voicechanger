@@ -97,7 +97,6 @@ enum class UiAccentPreset(
 data class UiSettings(
     val themeMode: UiThemeMode = UiThemeMode.SYSTEM,
     val accentPresetId: String = UiAccentPreset.GOLD.id,
-    val useMonet: Boolean = false,
     val overlayOpacityPercent: Int = 82,
     val overlaySizePercent: Int = 100,
 ) {
@@ -106,15 +105,14 @@ data class UiSettings(
 }
 
 object UiSettingsStore {
-    const val OVERLAY_OPACITY_MIN = 5
+    const val OVERLAY_OPACITY_MIN = 1
     const val OVERLAY_OPACITY_MAX = 100
-    const val OVERLAY_SIZE_MIN = 20
+    const val OVERLAY_SIZE_MIN = 10
     const val OVERLAY_SIZE_MAX = 160
 
     private const val PREFS_NAME = "qwulivoice_ui_settings"
     private const val KEY_THEME_MODE = "theme_mode"
     private const val KEY_ACCENT_PRESET = "accent_preset"
-    private const val KEY_USE_MONET = "use_monet"
     private const val KEY_OVERLAY_OPACITY = "overlay_opacity"
     private const val KEY_OVERLAY_SIZE = "overlay_size"
 
@@ -123,7 +121,6 @@ object UiSettingsStore {
         return UiSettings(
             themeMode = UiThemeMode.fromId(prefs.getString(KEY_THEME_MODE, UiThemeMode.SYSTEM.id)),
             accentPresetId = prefs.getString(KEY_ACCENT_PRESET, UiAccentPreset.GOLD.id).orEmpty(),
-            useMonet = prefs.getBoolean(KEY_USE_MONET, false),
             overlayOpacityPercent = prefs.getInt(KEY_OVERLAY_OPACITY, 82).coerceIn(OVERLAY_OPACITY_MIN, OVERLAY_OPACITY_MAX),
             overlaySizePercent = prefs.getInt(KEY_OVERLAY_SIZE, 100).coerceIn(OVERLAY_SIZE_MIN, OVERLAY_SIZE_MAX),
         )
@@ -140,7 +137,6 @@ object UiSettingsStore {
             .edit()
             .putString(KEY_THEME_MODE, sanitized.themeMode.id)
             .putString(KEY_ACCENT_PRESET, sanitized.accentPreset.id)
-            .putBoolean(KEY_USE_MONET, sanitized.useMonet)
             .putInt(KEY_OVERLAY_OPACITY, sanitized.overlayOpacityPercent)
             .putInt(KEY_OVERLAY_SIZE, sanitized.overlaySizePercent)
             .apply()

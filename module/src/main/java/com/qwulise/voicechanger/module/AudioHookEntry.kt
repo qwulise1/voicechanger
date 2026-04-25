@@ -11,6 +11,7 @@ import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.nio.ByteBuffer
 import java.util.Collections
+import java.lang.reflect.Method
 
 class AudioHookEntry : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
@@ -38,6 +39,10 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }
         } else {
             XposedBridge.log("qwulivoice: native hook skipped for $packageName")
+        }
+
+        if (shouldInstallTelegramPluginSafety(packageName)) {
+            installTelegramPluginSafetyHooks(packageName, lpparam.classLoader)
         }
 
         if (usesNativeOnlyHooks(packageName)) {
@@ -476,6 +481,102 @@ class AudioHookEntry : IXposedHookLoadPackage {
         })
     }
 
+    private fun installTelegramPluginSafetyHooks(packageName: String, classLoader: ClassLoader?) {
+        TELEGRAM_PLUGIN_SAFETY_CLASSES.keys.forEach { className ->
+            val clazz = runCatching { XposedHelpers.findClass(className, classLoader) }.getOrNull()
+            if (clazz != null) {
+                installTelegramPluginSafetyHooksOnClass(packageName, className, clazz)
+            }
+        }
+        if (classLoader == null) {
+            return
+        }
+        val watcherKey = "$packageName|plugin-safety"
+        if (!installedPluginSafetyWatchers.add(watcherKey)) {
+            return
+        }
+        val hookRef = arrayOfNulls<Set<XC_MethodHook.Unhook>>(1)
+        hookRef[0] = XposedBridge.hookAllMethods(ClassLoader::class.java, "loadClass", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val requestedName = param.args.firstOrNull() as? String ?: return
+                if (requestedName !in TELEGRAM_PLUGIN_SAFETY_CLASSES.keys) {
+                    return
+                }
+                val loadedClass = param.result as? Class<*> ?: return
+                installTelegramPluginSafetyHooksOnClass(packageName, requestedName, loadedClass)
+                val installedAll = TELEGRAM_PLUGIN_SAFETY_CLASSES.keys.all { className ->
+                    installedPluginSafetyClasses.contains("$packageName|$className")
+                }
+                if (installedAll) {
+                    hookRef[0]?.forEach { it.unhook() }
+                    installedPluginSafetyWatchers.remove(watcherKey)
+                }
+            }
+        })
+    }
+
+    private fun installTelegramPluginSafetyHooksOnClass(
+        packageName: String,
+        className: String,
+        clazz: Class<*>,
+    ): Boolean {
+        val installKey = "$packageName|$className"
+        if (!installedPluginSafetyClasses.add(installKey)) {
+            return false
+        }
+        val targetMethods = TELEGRAM_PLUGIN_SAFETY_CLASSES[className].orEmpty()
+        var installedAny = false
+        targetMethods.forEach { methodName ->
+            val unhooks = XposedBridge.hookAllMethods(
+                clazz,
+                methodName,
+                createPluginSafetyShortCircuitHook(packageName, className, methodName),
+            )
+            if (unhooks.isNotEmpty()) {
+                installedAny = true
+            }
+        }
+        if (!installedAny) {
+            installedPluginSafetyClasses.remove(installKey)
+            return false
+        }
+        XposedBridge.log("qwulivoice: installed plugin runtime safety in $packageName for $className")
+        return true
+    }
+
+    private fun createPluginSafetyShortCircuitHook(
+        packageName: String,
+        className: String,
+        methodName: String,
+    ) = object : XC_MethodHook() {
+        override fun beforeHookedMethod(param: MethodHookParam) {
+            DiagnosticsClient.reportEvent(
+                packageName = packageName,
+                source = "PluginSafety",
+                detail = "Short-circuited ${className.substringAfterLast('.')}.${methodName}",
+                rateKey = "$packageName|$className|$methodName|plugin-safety",
+                minIntervalMs = 8_000L,
+            )
+            val returnType = (param.method as? Method)?.returnType
+            param.result = defaultReturnValue(returnType)
+        }
+    }
+
+    private fun defaultReturnValue(returnType: Class<*>?): Any? =
+        when (returnType) {
+            null,
+            Void.TYPE -> null
+            java.lang.Boolean.TYPE -> false
+            java.lang.Integer.TYPE -> 0
+            java.lang.Long.TYPE -> 0L
+            java.lang.Float.TYPE -> 0f
+            java.lang.Double.TYPE -> 0.0
+            java.lang.Short.TYPE -> 0.toShort()
+            java.lang.Byte.TYPE -> 0.toByte()
+            java.lang.Character.TYPE -> 0.toChar()
+            else -> null
+        }
+
     private fun createWebRtcRecordHook(packageName: String, className: String) = object : XC_MethodHook() {
         override fun beforeHookedMethod(param: MethodHookParam) {
             runCatching {
@@ -578,9 +679,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     private fun usesNativeOnlyHooks(packageName: String): Boolean =
         packageName == "org.telegram.messenger" ||
-            packageName.startsWith("com.exteragram") ||
-            packageName == "com.viber.voip" ||
-            packageName.startsWith("com.discord")
+            packageName.startsWith("com.exteragram")
 
     private fun shouldAttachNative(packageName: String): Boolean =
         usesNativeOnlyHooks(packageName) || !isTelegramFamilyPackage(packageName)
@@ -593,6 +692,9 @@ class AudioHookEntry : IXposedHookLoadPackage {
             packageName == "com.viber.voip" ||
             packageName == "com.google.android.dialer" ||
             packageName.startsWith("com.discord")
+
+    private fun shouldInstallTelegramPluginSafety(packageName: String): Boolean =
+        packageName == "org.telegram.messenger" || packageName.startsWith("com.exteragram")
 
     private fun shouldInstallDeferredWebRtcHooks(packageName: String): Boolean =
         packageName == "com.viber.voip" ||
@@ -682,9 +784,21 @@ class AudioHookEntry : IXposedHookLoadPackage {
         private val installedPackages = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedWebRtcClasses = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedWebRtcWatchers = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedPluginSafetyClasses = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedPluginSafetyWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val WEB_RTC_RECORD_CLASSES = listOf(
             "org.webrtc.audio.WebRtcAudioRecord",
             "org.webrtc.voiceengine.WebRtcAudioRecord",
+        )
+        private val TELEGRAM_PLUGIN_SAFETY_CLASSES = linkedMapOf(
+            "com.exteragram.messenger.plugins.PluginsController" to listOf(
+                "applyBlacklist",
+                "applyArtOpts",
+            ),
+            "de.robv.android.xposed.XposedBridge" to listOf(
+                "disableProfileSaver",
+                "setBlacklist",
+            ),
         )
     }
 }

@@ -101,6 +101,8 @@ class SoundpadOverlayBubbleService : Service() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
+            clipToOutline = true
+            outlineProvider = ViewOutlineProvider.BACKGROUND
             setPadding(dp(14), dp(14), dp(14), dp(14))
         }
         val localPadsColumn = LinearLayout(this).apply {
@@ -198,14 +200,14 @@ class SoundpadOverlayBubbleService : Service() {
             .coerceIn(UiSettingsStore.OVERLAY_OPACITY_MIN, UiSettingsStore.OVERLAY_OPACITY_MAX) / 100f
         val overlayScale = settings.overlaySizePercent
             .coerceIn(UiSettingsStore.OVERLAY_SIZE_MIN, UiSettingsStore.OVERLAY_SIZE_MAX) / 100f
-        val avatarSize = (dp(56) * overlayScale).roundToInt().coerceAtLeast(dp(18))
-        val bubblePadding = (dp(6) * overlayScale).roundToInt().coerceAtLeast(dp(1))
+        val avatarSize = (dp(56) * overlayScale).roundToInt().coerceAtLeast(dp(10))
+        val bubblePadding = (dp(6) * overlayScale).roundToInt().coerceAtLeast(0)
         val bubbleSide = avatarSize + (bubblePadding * 2)
-        val bubbleRadius = (bubbleSide * 0.34f).coerceAtLeast(dp(7).toFloat())
-        val avatarRadius = (avatarSize * 0.32f).coerceAtLeast(dp(6).toFloat())
-        val panelWidth = (dp(230) * overlayScale).roundToInt().coerceAtLeast(dp(104))
-        val panelHeight = (dp(300) * overlayScale).roundToInt().coerceAtLeast(dp(126))
-        val alpha = (overlayOpacity * 255f).toInt().coerceIn(12, 255)
+        val bubbleRadius = (bubbleSide / 2f).coerceAtLeast(dp(4).toFloat())
+        val avatarRadius = (avatarSize * 0.30f).coerceAtLeast(dp(3).toFloat())
+        val panelWidth = (dp(230) * overlayScale).roundToInt().coerceAtLeast(dp(82))
+        val panelHeight = (dp(300) * overlayScale).roundToInt().coerceAtLeast(dp(104))
+        val alpha = (overlayOpacity * 255f).toInt().coerceIn(3, 255)
         (avatar.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
             if (params.width != avatarSize || params.height != avatarSize) {
                 params.width = avatarSize
@@ -228,8 +230,8 @@ class SoundpadOverlayBubbleService : Service() {
         panel.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = bubbleRadius
-            setColor(Color.argb((alpha * 0.92f).toInt().coerceAtLeast(10), 20, 16, 14))
-            setStroke(dp(1), Color.argb((alpha * 0.40f).toInt().coerceAtLeast(8), 255, 255, 255))
+            setColor(Color.argb((alpha * 0.92f).toInt().coerceAtLeast(3), 20, 16, 14))
+            setStroke(dp(1), Color.argb((alpha * 0.40f).toInt().coerceAtLeast(3), 255, 255, 255))
         }
         (scroll.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
             if (params.width != panelWidth || params.height != panelHeight) {
@@ -238,9 +240,16 @@ class SoundpadOverlayBubbleService : Service() {
                 scroll.layoutParams = params
             }
         }
-        bubble.alpha = overlayOpacity
+        avatar.alpha = overlayOpacity
+        bubble.alpha = 1f
         panel.alpha = overlayOpacity
         panel.visibility = if (panelVisible) View.VISIBLE else View.GONE
+        avatar.invalidateOutline()
+        bubble.invalidateOutline()
+        panel.invalidateOutline()
+        bubble.requestLayout()
+        panel.requestLayout()
+        root.requestLayout()
 
         column.removeAllViews()
         readySlots.forEachIndexed { index, slot ->
