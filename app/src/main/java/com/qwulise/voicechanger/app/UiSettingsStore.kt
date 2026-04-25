@@ -106,9 +106,9 @@ data class UiSettings(
 }
 
 object UiSettingsStore {
-    const val OVERLAY_OPACITY_MIN = 10
+    const val OVERLAY_OPACITY_MIN = 5
     const val OVERLAY_OPACITY_MAX = 100
-    const val OVERLAY_SIZE_MIN = 35
+    const val OVERLAY_SIZE_MIN = 20
     const val OVERLAY_SIZE_MAX = 160
 
     private const val PREFS_NAME = "qwulivoice_ui_settings"

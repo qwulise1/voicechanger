@@ -133,6 +133,17 @@ bool gBuilderDeleteHookInstalled = false;
 bool gWebRtcAudioHookInstalled = false;
 bool gWebRtcVoiceHookInstalled = false;
 
+std::string currentPackageName();
+void processInt16(
+    int16_t *samples,
+    int32_t numFrames,
+    int channelCount,
+    int sampleRate,
+    const NativeConfigSnapshot *config,
+    const NativeSoundpadSnapshot *soundpad,
+    StreamState &state
+);
+
 int64_t nowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()

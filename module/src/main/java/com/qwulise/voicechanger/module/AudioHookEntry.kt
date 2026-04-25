@@ -533,6 +533,20 @@ class AudioHookEntry : IXposedHookLoadPackage {
             className = "de.robv.android.xposed.XposedBridge",
             exactMethodNames = setOf("setBlacklist"),
         )
+        installDeferredBlacklistSafety(
+            packageName = packageName,
+            classLoader = classLoader,
+            targets = listOf(
+                DeferredBlacklistTarget(
+                    className = "com.exteragram.messenger.plugins.PluginsController",
+                    exactMethodNames = setOf("applyBlacklist"),
+                ),
+                DeferredBlacklistTarget(
+                    className = "de.robv.android.xposed.XposedBridge",
+                    exactMethodNames = setOf("setBlacklist"),
+                ),
+            ),
+        )
     }
 
     private fun installBlacklistShortCircuit(
@@ -544,7 +558,20 @@ class AudioHookEntry : IXposedHookLoadPackage {
         val clazz = runCatching {
             XposedHelpers.findClass(className, classLoader)
         }.getOrNull() ?: return
+        installBlacklistShortCircuitOnClass(packageName, clazz, exactMethodNames)
+    }
 
+    private fun installBlacklistShortCircuitOnClass(
+        packageName: String,
+        clazz: Class<*>,
+        exactMethodNames: Set<String>,
+    ) {
+        val classKey = "$packageName|${clazz.name}"
+        if (!installedBlacklistClasses.add(classKey)) {
+            return
+        }
+
+        XposedBridge.log("qwulivoice: installing blacklist safety for ${clazz.name} in $packageName")
         clazz.declaredMethods
             .filter { method ->
                 method.name in exactMethodNames || method.name.contains("Blacklist", ignoreCase = true)
@@ -556,13 +583,43 @@ class AudioHookEntry : IXposedHookLoadPackage {
                         DiagnosticsClient.reportEvent(
                             packageName = packageName,
                             source = "Telegram.startupSafety",
-                            detail = "Short-circuited ${className.substringAfterLast('.')}.${method.name}",
-                            rateKey = "$packageName|$className|${method.name}",
+                            detail = "Short-circuited ${clazz.name.substringAfterLast('.')}.${method.name}",
+                            rateKey = "$packageName|${clazz.name}|${method.name}",
                             minIntervalMs = 20_000L,
                         )
                     }
                 })
             }
+    }
+
+    private fun installDeferredBlacklistSafety(
+        packageName: String,
+        classLoader: ClassLoader?,
+        targets: List<DeferredBlacklistTarget>,
+    ) {
+        if (classLoader == null) {
+            return
+        }
+        val watcherKey = "$packageName|${System.identityHashCode(classLoader)}"
+        if (!installedBlacklistWatchers.add(watcherKey)) {
+            return
+        }
+
+        XposedBridge.hookAllMethods(ClassLoader::class.java, "loadClass", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                if (param.thisObject !== classLoader) {
+                    return
+                }
+                val requestedName = param.args.firstOrNull() as? String ?: return
+                val target = targets.firstOrNull { it.className == requestedName } ?: return
+                val loadedClass = param.result as? Class<*> ?: return
+                installBlacklistShortCircuitOnClass(
+                    packageName = packageName,
+                    clazz = loadedClass,
+                    exactMethodNames = target.exactMethodNames,
+                )
+            }
+        })
     }
 
     private fun defaultValueFor(type: Class<*>?): Any? =
@@ -665,9 +722,16 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     companion object {
         private val installedPackages = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedBlacklistClasses = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedBlacklistWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val WEB_RTC_RECORD_CLASSES = listOf(
             "org.webrtc.audio.WebRtcAudioRecord",
             "org.webrtc.voiceengine.WebRtcAudioRecord",
         )
     }
 }
+
+private data class DeferredBlacklistTarget(
+    val className: String,
+    val exactMethodNames: Set<String>,
+)
