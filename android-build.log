@@ -1,0 +1,212 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.7/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :module:preBuild UP-TO-DATE
+> Task :module:preCleanDebugBuild UP-TO-DATE
+> Task :module:mergeCleanDebugNativeDebugMetadata NO-SOURCE
+> Task :module:checkKotlinGradlePluginConfigurationErrors
+> Task :module:generateCleanDebugBuildConfig
+> Task :core:dsp:preBuild UP-TO-DATE
+> Task :core:dsp:preDebugBuild UP-TO-DATE
+> Task :module:generateCleanDebugResValues
+> Task :core:dsp:generateDebugResValues
+> Task :core:dsp:generateDebugResources
+> Task :core:dsp:writeDebugAarMetadata
+> Task :core:dsp:packageDebugResources
+> Task :module:checkCleanDebugAarMetadata
+> Task :module:mapCleanDebugSourceSetPaths
+> Task :module:generateCleanDebugResources
+> Task :module:packageCleanDebugResources
+> Task :module:createCleanDebugCompatibleScreenManifests
+> Task :module:extractDeepLinksCleanDebug
+> Task :core:dsp:extractDeepLinksDebug
+> Task :core:dsp:compileDebugLibraryResources
+> Task :module:parseCleanDebugLocalResources
+> Task :core:dsp:checkKotlinGradlePluginConfigurationErrors
+> Task :core:dsp:javaPreCompileDebug
+> Task :core:dsp:parseDebugLocalResources
+> Task :module:javaPreCompileCleanDebug
+> Task :core:dsp:processDebugManifest
+> Task :core:dsp:generateDebugRFile
+> Task :module:mergeCleanDebugShaders
+
+> Task :module:processCleanDebugMainManifest
+/home/runner/work/voicechanger/voicechanger/module/src/main/AndroidManifest.xml:8:9-42 Warning:
+	android:extractNativeLibs should not be specified in this source AndroidManifest.xml file. See https://d.android.com/guide/topics/manifest/application-element#extractNativeLibs for more information.
+The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml file and update the build file accordingly. See https://d.android.com/studio/build/agp-upgrade-assistant for more information.
+
+> Task :module:mergeCleanDebugResources
+> Task :module:processCleanDebugManifest
+> Task :module:compileCleanDebugShaders NO-SOURCE
+> Task :module:generateCleanDebugAssets UP-TO-DATE
+> Task :core:dsp:mergeDebugShaders
+> Task :core:dsp:compileDebugShaders NO-SOURCE
+> Task :core:dsp:generateDebugAssets UP-TO-DATE
+> Task :core:dsp:packageDebugAssets
+> Task :module:processCleanDebugManifestForPackage
+> Task :module:mergeCleanDebugAssets
+> Task :module:desugarCleanDebugFileDependencies
+> Task :module:compressCleanDebugAssets
+> Task :module:mergeCleanDebugStartupProfile
+> Task :module:checkCleanDebugDuplicateClasses
+> Task :module:processCleanDebugResources
+> Task :module:configureCMakeDebug[arm64-v8a]
+> Task :module:buildCMakeDebug[arm64-v8a]
+> Task :module:configureCMakeDebug[armeabi-v7a]
+> Task :module:mergeExtDexCleanDebug
+> Task :module:buildCMakeDebug[armeabi-v7a]
+> Task :module:configureCMakeDebug[x86]
+> Task :module:buildCMakeDebug[x86]
+> Task :module:configureCMakeDebug[x86_64]
+> Task :module:buildCMakeDebug[x86_64]
+> Task :module:mergeCleanDebugJniLibFolders
+> Task :core:dsp:mergeDebugJniLibFolders
+> Task :core:dsp:mergeDebugNativeLibs NO-SOURCE
+> Task :core:dsp:copyDebugJniLibsProjectOnly
+> Task :module:validateSigningCleanDebug
+> Task :module:writeCleanDebugAppMetadata
+> Task :module:writeCleanDebugSigningConfigVersions
+> Task :module:mergeCleanDebugNativeLibs
+> Task :module:buildKotlinToolingMetadata
+> Task :module:preCleanReleaseBuild UP-TO-DATE
+> Task :module:generateCleanReleaseBuildConfig
+> Task :core:dsp:preReleaseBuild UP-TO-DATE
+> Task :core:dsp:writeReleaseAarMetadata
+> Task :module:generateCleanReleaseResValues
+> Task :core:dsp:generateReleaseResValues
+> Task :module:checkCleanReleaseAarMetadata
+> Task :core:dsp:generateReleaseResources
+> Task :module:stripCleanDebugDebugSymbols
+> Task :core:dsp:packageReleaseResources
+> Task :module:mapCleanReleaseSourceSetPaths
+> Task :module:generateCleanReleaseResources
+> Task :core:dsp:compileDebugKotlin
+> Task :core:dsp:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:dsp:bundleLibCompileToJarDebug
+> Task :core:dsp:bundleLibRuntimeToJarDebug
+> Task :core:dsp:processDebugJavaRes
+> Task :core:dsp:bundleLibRuntimeToDirDebug
+> Task :module:packageCleanReleaseResources
+> Task :module:parseCleanReleaseLocalResources
+> Task :module:createCleanReleaseCompatibleScreenManifests
+> Task :module:extractDeepLinksCleanRelease
+> Task :core:dsp:extractDeepLinksRelease
+> Task :core:dsp:processReleaseManifest
+
+> Task :module:processCleanReleaseMainManifest
+/home/runner/work/voicechanger/voicechanger/module/src/main/AndroidManifest.xml:8:9-42 Warning:
+	android:extractNativeLibs should not be specified in this source AndroidManifest.xml file. See https://d.android.com/guide/topics/manifest/application-element#extractNativeLibs for more information.
+The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml file and update the build file accordingly. See https://d.android.com/studio/build/agp-upgrade-assistant for more information.
+
+> Task :module:processCleanReleaseManifest
+> Task :module:processCleanReleaseManifestForPackage
+> Task :core:dsp:compileReleaseLibraryResources
+> Task :module:mergeLibDexCleanDebug
+> Task :core:dsp:parseReleaseLocalResources
+> Task :core:dsp:javaPreCompileRelease
+> Task :module:javaPreCompileCleanRelease
+> Task :core:dsp:generateReleaseRFile
+> Task :module:extractProguardFiles
+> Task :core:dsp:extractProguardFiles
+> Task :core:dsp:prepareLintJarForPublish
+> Task :core:dsp:mergeReleaseJniLibFolders
+> Task :core:dsp:mergeReleaseNativeLibs NO-SOURCE
+> Task :core:dsp:stripReleaseDebugSymbols NO-SOURCE
+> Task :core:dsp:copyReleaseJniLibsProjectAndLocalJars
+> Task :core:dsp:extractDeepLinksForAarRelease
+> Task :core:dsp:mergeReleaseShaders
+> Task :core:dsp:compileReleaseShaders NO-SOURCE
+> Task :core:dsp:generateReleaseAssets UP-TO-DATE
+> Task :core:dsp:packageReleaseAssets
+> Task :core:dsp:prepareReleaseArtProfile
+> Task :core:dsp:writeReleaseLintModelMetadata
+> Task :module:configureCMakeRelWithDebInfo[arm64-v8a]
+> Task :core:dsp:compileReleaseKotlin
+> Task :module:buildCMakeRelWithDebInfo[arm64-v8a]
+> Task :core:dsp:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:dsp:bundleLibCompileToJarRelease
+> Task :core:dsp:bundleLibRuntimeToJarRelease
+> Task :core:dsp:processReleaseJavaRes
+> Task :core:dsp:createFullJarRelease
+> Task :core:dsp:generateReleaseLintModel
+> Task :core:dsp:extractReleaseAnnotations
+> Task :core:dsp:mergeReleaseGeneratedProguardFiles
+> Task :core:dsp:mergeReleaseConsumerProguardFiles
+> Task :core:dsp:mergeReleaseJavaResource
+> Task :core:dsp:syncReleaseLibJars
+> Task :core:dsp:bundleReleaseLocalLintAar
+> Task :core:dsp:generateReleaseLintVitalModel
+> Task :module:configureCMakeRelWithDebInfo[armeabi-v7a]
+> Task :module:mergeCleanReleaseResources
+> Task :module:buildCMakeRelWithDebInfo[armeabi-v7a]
+> Task :module:configureCMakeRelWithDebInfo[x86]
+> Task :module:processCleanReleaseResources
+> Task :module:buildCMakeRelWithDebInfo[x86]
+> Task :module:compileCleanDebugKotlin
+> Task :module:configureCMakeRelWithDebInfo[x86_64]
+
+> Task :module:compileCleanDebugKotlin
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1468:76 There is more than one label with such a name in this scope
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1628:39 Parameter 'widthDp' is never used
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1628:53 Parameter 'heightDp' is never used
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/SoundpadImporter.kt:152:51 Unnecessary safe call on a non-null receiver of type MediaFormat
+
+> Task :module:buildCMakeRelWithDebInfo[x86_64]
+> Task :core:dsp:lintVitalAnalyzeRelease
+> Task :module:compileCleanDebugJavaWithJavac
+> Task :module:dexBuilderCleanDebug
+> Task :module:mergeCleanDebugGlobalSynthetics
+> Task :module:processCleanDebugJavaRes
+> Task :module:mergeCleanReleaseJniLibFolders
+> Task :core:dsp:copyReleaseJniLibsProjectOnly
+> Task :module:mergeProjectDexCleanDebug
+> Task :module:mergeCleanReleaseNativeLibs
+> Task :module:mergeCleanReleaseArtProfile
+> Task :module:desugarCleanReleaseFileDependencies
+> Task :module:stripCleanReleaseDebugSymbols
+> Task :core:dsp:bundleLibRuntimeToDirRelease
+> Task :module:extractCleanReleaseNativeSymbolTables
+> Task :module:mergeCleanDebugJavaResource
+> Task :module:mergeCleanReleaseNativeDebugMetadata
+> Task :module:checkCleanReleaseDuplicateClasses
+> Task :module:mergeCleanReleaseStartupProfile
+> Task :module:mergeCleanReleaseShaders
+> Task :module:compileCleanReleaseShaders NO-SOURCE
+> Task :module:packageCleanDebug
+> Task :module:createCleanDebugApkListingFileRedirect
+> Task :module:assembleCleanDebug
+> Task :module:generateCleanReleaseAssets UP-TO-DATE
+> Task :module:mergeCleanReleaseAssets
+> Task :module:compressCleanReleaseAssets
+> Task :module:extractCleanReleaseVersionControlInfo
+> Task :module:collectCleanReleaseDependencies
+> Task :module:sdkCleanReleaseDependencyData
+> Task :module:validateSigningCleanRelease
+> Task :module:writeCleanReleaseAppMetadata
+> Task :module:writeCleanReleaseSigningConfigVersions
+> Task :module:optimizeCleanReleaseResources
+> Task :module:mergeExtDexCleanRelease
+
+> Task :module:compileCleanReleaseKotlin
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1468:76 There is more than one label with such a name in this scope
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1628:39 Parameter 'widthDp' is never used
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1628:53 Parameter 'heightDp' is never used
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/SoundpadImporter.kt:152:51 Unnecessary safe call on a non-null receiver of type MediaFormat
+
+> Task :module:compileCleanReleaseJavaWithJavac
+> Task :module:generateCleanReleaseLintVitalReportModel
+> Task :module:dexBuilderCleanRelease
+> Task :module:mergeCleanReleaseGlobalSynthetics
+> Task :module:processCleanReleaseJavaRes
+> Task :module:mergeCleanReleaseJavaResource
+> Task :module:mergeDexCleanRelease
+> Task :module:compileCleanReleaseArtProfile
+> Task :module:packageCleanRelease
+> Task :module:createCleanReleaseApkListingFileRedirect
+> Task :module:lintVitalAnalyzeCleanRelease
+> Task :module:lintVitalReportCleanRelease
+> Task :module:lintVitalCleanRelease
+> Task :module:assembleCleanRelease
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1777141473328.json
+
+BUILD SUCCESSFUL in 1m 44s
+161 actionable tasks: 161 executed
