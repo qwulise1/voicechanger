@@ -11,6 +11,7 @@ import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.nio.ByteBuffer
 import java.util.Collections
+import java.lang.reflect.Method
 
 class AudioHookEntry : IXposedHookLoadPackage {
     override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
@@ -30,6 +31,10 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }
         }
 
+        if (usesTelegramBlacklistSafety(packageName)) {
+            installTelegramBlacklistSafetyHooks(packageName, lpparam.classLoader)
+        }
+
         if (shouldAttachNative(packageName)) {
             runCatching {
                 NativeAudioBridge.attachToProcess(packageName)
@@ -38,11 +43,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }
         } else {
             XposedBridge.log("qwulivoice: native hook skipped for $packageName")
-        }
-
-        if (usesTelegramNativeOnlyMode(packageName)) {
-            XposedBridge.log("qwulivoice: using native-only path in $packageName for startup safety")
-            return
         }
 
         if (usesTelegramScopedHooks(packageName)) {
@@ -520,25 +520,84 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }.getOrNull()?.takeIf { it > 0 }
         }
 
+    private fun installTelegramBlacklistSafetyHooks(packageName: String, classLoader: ClassLoader?) {
+        installBlacklistShortCircuit(
+            packageName = packageName,
+            classLoader = classLoader,
+            className = "com.exteragram.messenger.plugins.PluginsController",
+            exactMethodNames = setOf("applyBlacklist"),
+        )
+        installBlacklistShortCircuit(
+            packageName = packageName,
+            classLoader = classLoader,
+            className = "de.robv.android.xposed.XposedBridge",
+            exactMethodNames = setOf("setBlacklist"),
+        )
+    }
+
+    private fun installBlacklistShortCircuit(
+        packageName: String,
+        classLoader: ClassLoader?,
+        className: String,
+        exactMethodNames: Set<String>,
+    ) {
+        val clazz = runCatching {
+            XposedHelpers.findClass(className, classLoader)
+        }.getOrNull() ?: return
+
+        clazz.declaredMethods
+            .filter { method ->
+                method.name in exactMethodNames || method.name.contains("Blacklist", ignoreCase = true)
+            }
+            .forEach { method ->
+                XposedBridge.hookMethod(method, object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        param.result = defaultValueFor((param.method as? Method)?.returnType)
+                        DiagnosticsClient.reportEvent(
+                            packageName = packageName,
+                            source = "Telegram.startupSafety",
+                            detail = "Short-circuited ${className.substringAfterLast('.')}.${method.name}",
+                            rateKey = "$packageName|$className|${method.name}",
+                            minIntervalMs = 20_000L,
+                        )
+                    }
+                })
+            }
+    }
+
+    private fun defaultValueFor(type: Class<*>?): Any? =
+        when (type) {
+            null, Void.TYPE -> null
+            java.lang.Boolean.TYPE -> false
+            java.lang.Integer.TYPE -> 0
+            java.lang.Long.TYPE -> 0L
+            java.lang.Float.TYPE -> 0f
+            java.lang.Double.TYPE -> 0.0
+            java.lang.Short.TYPE -> 0.toShort()
+            java.lang.Byte.TYPE -> 0.toByte()
+            java.lang.Character.TYPE -> 0.toChar()
+            else -> null
+        }
+
     private fun isTelegramFamilyPackage(packageName: String): Boolean =
         packageName.startsWith("org.telegram.messenger") ||
             packageName.startsWith("com.exteragram")
 
     private fun usesTelegramScopedHooks(packageName: String): Boolean =
-        packageName == "org.telegram.messenger.beta" ||
+        packageName.startsWith("org.telegram.messenger") ||
             packageName.startsWith("com.exteragram")
 
-    private fun usesTelegramNativeOnlyMode(packageName: String): Boolean =
+    private fun usesTelegramBlacklistSafety(packageName: String): Boolean =
         packageName == "org.telegram.messenger"
 
     private fun shouldAttachNative(packageName: String): Boolean =
-        packageName == "org.telegram.messenger" || !isTelegramFamilyPackage(packageName)
+        !isTelegramFamilyPackage(packageName)
 
     private fun shouldRestrictToMainProcess(packageName: String): Boolean =
         isTelegramFamilyPackage(packageName)
 
     private fun shouldInstallWebRtcJavaHooks(packageName: String): Boolean =
-        packageName != "org.telegram.messenger"
+        isTelegramFamilyPackage(packageName)
 
     private object ConfigClient {
         private const val CACHE_WINDOW_MS = 800L

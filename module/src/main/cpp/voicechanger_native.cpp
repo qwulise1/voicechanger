@@ -36,6 +36,8 @@ using AAudioOpenStreamFn = aaudio_result_t (*)(AAudioStreamBuilder *builder, AAu
 using AAudioSetDataCallbackFn = aaudio_result_t (*)(AAudioStreamBuilder *builder, AAudioStream_dataCallback callback, void *userData);
 using AAudioStreamCloseFn = aaudio_result_t (*)(AAudioStream *stream);
 using AAudioBuilderDeleteFn = aaudio_result_t (*)(AAudioStreamBuilder *builder);
+using JniWebRtcAudioRecordedFn = void (*)(JNIEnv *env, jobject thiz, jlong nativeAudioRecord, jint byteCount, jlong captureTimestampNs);
+using JniWebRtcVoiceEngineRecordedFn = void (*)(JNIEnv *env, jobject thiz, jint byteCount, jlong nativeAudioRecord);
 
 struct NativeConfigSnapshot {
     bool enabled = false;
@@ -87,11 +89,15 @@ AAudioOpenStreamFn gBackupOpenStream = nullptr;
 AAudioSetDataCallbackFn gBackupSetDataCallback = nullptr;
 AAudioStreamCloseFn gBackupClose = nullptr;
 AAudioBuilderDeleteFn gBackupBuilderDelete = nullptr;
+JniWebRtcAudioRecordedFn gBackupWebRtcAudioRecorded = nullptr;
+JniWebRtcVoiceEngineRecordedFn gBackupWebRtcVoiceRecorded = nullptr;
 
 JavaVM *gJavaVm = nullptr;
 jclass gBridgeClass = nullptr;
+jclass gSystemClass = nullptr;
 jmethodID gSnapshotMethod = nullptr;
 jmethodID gReportMethod = nullptr;
+jmethodID gIdentityHashCodeMethod = nullptr;
 jmethodID gSnapshotGetEnabled = nullptr;
 jmethodID gSnapshotGetAllowed = nullptr;
 jmethodID gSnapshotGetModeId = nullptr;
@@ -115,6 +121,7 @@ std::unordered_map<AAudioStream *, StreamState> gStreamStates;
 std::unordered_map<AAudioStreamBuilder *, bool> gBuilderUsesCallback;
 std::unordered_map<AAudioStreamBuilder *, CallbackBinding> gBuilderCallbacks;
 std::unordered_map<AAudioStream *, CallbackBinding> gStreamCallbacks;
+std::unordered_map<int, StreamState> gWebRtcStates;
 std::string gProcessPackageName;
 bool gHooksEnabled = false;
 
@@ -123,6 +130,8 @@ bool gOpenHookInstalled = false;
 bool gCallbackHookInstalled = false;
 bool gCloseHookInstalled = false;
 bool gBuilderDeleteHookInstalled = false;
+bool gWebRtcAudioHookInstalled = false;
+bool gWebRtcVoiceHookInstalled = false;
 
 int64_t nowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -192,6 +201,102 @@ bool resolveSoundpadBridge(JNIEnv *env) {
            gSoundpadGetGainPercent != nullptr &&
            gSoundpadGetLooping != nullptr &&
            gSoundpadGetSessionId != nullptr;
+}
+
+void clearPendingException(JNIEnv *env) {
+    if (env != nullptr && env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
+}
+
+jfieldID findFieldInHierarchy(JNIEnv *env, jobject target, const char *name, const char *signature) {
+    if (env == nullptr || target == nullptr || name == nullptr || signature == nullptr) {
+        return nullptr;
+    }
+
+    jclass current = env->GetObjectClass(target);
+    while (current != nullptr) {
+        jfieldID field = env->GetFieldID(current, name, signature);
+        if (field != nullptr) {
+            env->DeleteLocalRef(current);
+            return field;
+        }
+        clearPendingException(env);
+        jclass parent = env->GetSuperclass(current);
+        env->DeleteLocalRef(current);
+        current = parent;
+    }
+    return nullptr;
+}
+
+jobject findObjectField(JNIEnv *env, jobject target, const std::vector<const char *> &names, const char *signature) {
+    if (env == nullptr || target == nullptr) {
+        return nullptr;
+    }
+    for (const char *name : names) {
+        const jfieldID field = findFieldInHierarchy(env, target, name, signature);
+        if (field == nullptr) {
+            continue;
+        }
+        jobject value = env->GetObjectField(target, field);
+        if (!env->ExceptionCheck()) {
+            return value;
+        }
+        clearPendingException(env);
+    }
+    return nullptr;
+}
+
+int findIntField(JNIEnv *env, jobject target, const std::vector<const char *> &names) {
+    if (env == nullptr || target == nullptr) {
+        return 0;
+    }
+    for (const char *name : names) {
+        const jfieldID field = findFieldInHierarchy(env, target, name, "I");
+        if (field == nullptr) {
+            continue;
+        }
+        const jint value = env->GetIntField(target, field);
+        if (!env->ExceptionCheck() && value > 0) {
+            return value;
+        }
+        clearPendingException(env);
+    }
+    return 0;
+}
+
+int callIntMethodIfPresent(JNIEnv *env, jobject target, const char *methodName, const char *signature) {
+    if (env == nullptr || target == nullptr || methodName == nullptr || signature == nullptr) {
+        return 0;
+    }
+    jclass clazz = env->GetObjectClass(target);
+    if (clazz == nullptr) {
+        return 0;
+    }
+    jmethodID method = env->GetMethodID(clazz, methodName, signature);
+    env->DeleteLocalRef(clazz);
+    if (method == nullptr) {
+        clearPendingException(env);
+        return 0;
+    }
+    const jint value = env->CallIntMethod(target, method);
+    if (env->ExceptionCheck()) {
+        clearPendingException(env);
+        return 0;
+    }
+    return value > 0 ? value : 0;
+}
+
+int objectKey(JNIEnv *env, jobject target) {
+    if (env == nullptr || target == nullptr || gSystemClass == nullptr || gIdentityHashCodeMethod == nullptr) {
+        return 0;
+    }
+    const jint value = env->CallStaticIntMethod(gSystemClass, gIdentityHashCodeMethod, target);
+    if (env->ExceptionCheck()) {
+        clearPendingException(env);
+        return 0;
+    }
+    return value;
 }
 
 NativeConfigSnapshot loadConfigSnapshot(const std::string &packageName) {
@@ -515,6 +620,120 @@ float nextSoundpadSample(int outputSampleRate, StreamState &state) {
     return std::clamp(sample * state.soundpadMix, -1.0f, 1.0f);
 }
 
+int resolveWebRtcSampleRate(JNIEnv *env, jobject holder, jobject audioRecord) {
+    const int directValue = findIntField(env, holder, {"sampleRate", "sampleRateHz", "sampleRateInHz", "requestedSampleRate"});
+    if (directValue > 0) {
+        return directValue;
+    }
+    const int fromAudioRecord = callIntMethodIfPresent(env, audioRecord, "getSampleRate", "()I");
+    if (fromAudioRecord > 0) {
+        return fromAudioRecord;
+    }
+    return 48000;
+}
+
+int resolveWebRtcChannelCount(JNIEnv *env, jobject holder, jobject audioRecord) {
+    const int directValue = findIntField(env, holder, {"channels", "channelCount", "inputChannels", "requestedChannels"});
+    if (directValue > 0) {
+        return directValue;
+    }
+    const int fromAudioRecord = callIntMethodIfPresent(env, audioRecord, "getChannelCount", "()I");
+    if (fromAudioRecord > 0) {
+        return fromAudioRecord;
+    }
+    return 1;
+}
+
+void processWebRtcRecordedBuffer(JNIEnv *env, jobject holder, jint byteCount, const std::string &source) {
+    if (env == nullptr || holder == nullptr || byteCount <= 0) {
+        return;
+    }
+
+    const std::string packageName = currentPackageName();
+    if (packageName.empty()) {
+        return;
+    }
+
+    const NativeConfigSnapshot config = loadConfigSnapshot(packageName);
+    const NativeSoundpadSnapshot soundpad = loadSoundpadSnapshot();
+    const bool applyVoice = config.valid && config.enabled && config.allowed;
+    const bool applySoundpad = soundpad.valid && soundpad.active;
+    if (!applyVoice && !applySoundpad) {
+        return;
+    }
+
+    jobject byteBuffer = findObjectField(env, holder, {"byteBuffer"}, "Ljava/nio/ByteBuffer;");
+    if (byteBuffer == nullptr) {
+        reportEvent(
+            packageName,
+            source,
+            "Holder has no direct byteBuffer field.",
+            false,
+            packageName + "|" + source + "|missing-buffer",
+            20000
+        );
+        return;
+    }
+
+    void *bufferAddress = env->GetDirectBufferAddress(byteBuffer);
+    const jlong bufferCapacity = env->GetDirectBufferCapacity(byteBuffer);
+    if (bufferAddress == nullptr || bufferCapacity <= 0) {
+        env->DeleteLocalRef(byteBuffer);
+        reportEvent(
+            packageName,
+            source,
+            "Direct ByteBuffer address unavailable.",
+            false,
+            packageName + "|" + source + "|buffer-address",
+            20000
+        );
+        return;
+    }
+
+    jobject audioRecord = findObjectField(env, holder, {"audioRecord"}, "Landroid/media/AudioRecord;");
+    const int sampleRate = resolveWebRtcSampleRate(env, holder, audioRecord);
+    const int channelCount = std::max(resolveWebRtcChannelCount(env, holder, audioRecord), 1);
+    const int safeByteCount = std::min(static_cast<int>(bufferCapacity), static_cast<int>(byteCount));
+    const int frameCount = safeByteCount / (static_cast<int>(sizeof(int16_t)) * channelCount);
+
+    if (frameCount > 0) {
+        const int key = objectKey(env, holder);
+        std::lock_guard<std::mutex> lock(gStateMutex);
+        StreamState &state = gWebRtcStates[key != 0 ? key : safeByteCount];
+        processInt16(
+            static_cast<int16_t *>(bufferAddress),
+            frameCount,
+            channelCount,
+            sampleRate,
+            applyVoice ? &config : nullptr,
+            applySoundpad ? &soundpad : nullptr,
+            state
+        );
+    }
+
+    if (audioRecord != nullptr) {
+        env->DeleteLocalRef(audioRecord);
+    }
+    env->DeleteLocalRef(byteBuffer);
+
+    if (frameCount <= 0) {
+        return;
+    }
+
+    reportEvent(
+        packageName,
+        source,
+        "Applied JNI WebRTC hook bytes=" + std::to_string(safeByteCount) +
+            " rate=" + std::to_string(sampleRate) + "Hz channels=" + std::to_string(channelCount) +
+            " mode=" + (applyVoice ? config.modeId : "original") +
+            " gain=" + std::to_string(applyVoice ? config.micGainPercent : 0) +
+            "% soundpad=" + (applySoundpad ? soundpad.pcmPath : "off"),
+        false,
+        packageName + "|" + source + "|apply",
+        12000
+    );
+}
+
 void processInt16(
     int16_t *samples,
     int32_t numFrames,
@@ -615,6 +834,40 @@ void installHookIfPresent(void *handle, const char *symbolName, void *replacemen
     } else {
         logLine(ANDROID_LOG_WARN, std::string("Failed to install hook for ") + symbolName);
     }
+}
+
+void hookedWebRtcAudioNativeDataIsRecorded(JNIEnv *env, jobject thiz, jlong nativeAudioRecord, jint byteCount, jlong captureTimestampNs) {
+    processWebRtcRecordedBuffer(env, thiz, byteCount, "JNI.WebRtcAudioRecord");
+    if (gBackupWebRtcAudioRecorded != nullptr) {
+        gBackupWebRtcAudioRecorded(env, thiz, nativeAudioRecord, byteCount, captureTimestampNs);
+    }
+}
+
+void hookedWebRtcVoiceNativeDataIsRecorded(JNIEnv *env, jobject thiz, jint byteCount, jlong nativeAudioRecord) {
+    processWebRtcRecordedBuffer(env, thiz, byteCount, "JNI.WebRtcVoiceRecord");
+    if (gBackupWebRtcVoiceRecorded != nullptr) {
+        gBackupWebRtcVoiceRecorded(env, thiz, byteCount, nativeAudioRecord);
+    }
+}
+
+void installJniHooks(void *handle) {
+    if (!hooksEnabled()) {
+        return;
+    }
+    installHookIfPresent(
+        handle,
+        "Java_org_webrtc_audio_WebRtcAudioRecord_nativeDataIsRecorded",
+        reinterpret_cast<void *>(hookedWebRtcAudioNativeDataIsRecorded),
+        reinterpret_cast<void **>(&gBackupWebRtcAudioRecorded),
+        &gWebRtcAudioHookInstalled
+    );
+    installHookIfPresent(
+        handle,
+        "Java_org_webrtc_voiceengine_WebRtcAudioRecord_nativeDataIsRecorded",
+        reinterpret_cast<void *>(hookedWebRtcVoiceNativeDataIsRecorded),
+        reinterpret_cast<void **>(&gBackupWebRtcVoiceRecorded),
+        &gWebRtcVoiceHookInstalled
+    );
 }
 
 aaudio_data_callback_result_t hookedAAudioDataCallback(AAudioStream *stream, void *userData, void *audioData, int32_t numFrames) {
@@ -907,7 +1160,11 @@ void installAAudioHooks(void *handle) {
 }
 
 void onLibraryLoaded(const char *name, void *handle) {
-    if (hooksEnabled() && name != nullptr && endsWith(name, "libaaudio.so")) {
+    if (!hooksEnabled() || handle == nullptr) {
+        return;
+    }
+    installJniHooks(handle);
+    if (name != nullptr && endsWith(name, "libaaudio.so")) {
         installAAudioHooks(handle);
     }
 }
@@ -940,17 +1197,33 @@ Java_com_qwulise_voicechanger_module_NativeAudioBridge_nativeSetProcessPackageNa
         gCachedSoundpad.loadedAtMs = 0;
         gCachedSoundpad.valid = false;
     }
+    {
+        std::lock_guard<std::mutex> lock(gStateMutex);
+        gWebRtcStates.clear();
+    }
 
     logLine(ANDROID_LOG_INFO, std::string("Attached native bridge to ") + attachedPackage);
 
     if (hooksEnabled()) {
-        void *preloadedHandle = nullptr;
+        const char *preloadedLibraries[] = {
+            "libaaudio.so",
+            "libdiscord.so",
+            "libjingle_peerconnection_so.so",
+            "libtmessages.49.so",
+            "libtmessages.so",
+        };
 #ifdef RTLD_NOLOAD
-        preloadedHandle = dlopen("libaaudio.so", RTLD_NOW | RTLD_NOLOAD);
-#endif
-        if (preloadedHandle != nullptr) {
-            installAAudioHooks(preloadedHandle);
+        for (const char *libraryName : preloadedLibraries) {
+            void *preloadedHandle = dlopen(libraryName, RTLD_NOW | RTLD_NOLOAD);
+            if (preloadedHandle == nullptr) {
+                continue;
+            }
+            installJniHooks(preloadedHandle);
+            if (std::string_view(libraryName) == "libaaudio.so") {
+                installAAudioHooks(preloadedHandle);
+            }
         }
+#endif
     }
 }
 
@@ -968,6 +1241,13 @@ extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *) {
     }
     gBridgeClass = reinterpret_cast<jclass>(env->NewGlobalRef(localBridgeClass));
     env->DeleteLocalRef(localBridgeClass);
+
+    jclass localSystemClass = env->FindClass("java/lang/System");
+    if (localSystemClass != nullptr) {
+        gSystemClass = reinterpret_cast<jclass>(env->NewGlobalRef(localSystemClass));
+        env->DeleteLocalRef(localSystemClass);
+        gIdentityHashCodeMethod = env->GetStaticMethodID(gSystemClass, "identityHashCode", "(Ljava/lang/Object;)I");
+    }
 
     gSnapshotMethod = env->GetStaticMethodID(
         gBridgeClass,

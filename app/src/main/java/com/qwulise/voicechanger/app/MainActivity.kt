@@ -653,7 +653,8 @@ class MainActivity : AppCompatActivity() {
             }
             addView(overlayOpacityValue)
             overlayOpacitySlider = GlassSlider(this@MainActivity).apply {
-                max = 100
+                min = UiSettingsStore.OVERLAY_OPACITY_MIN
+                max = UiSettingsStore.OVERLAY_OPACITY_MAX
                 progress = uiSettings.overlayOpacityPercent
                 setColors(palette.accentAlt, palette.sliderTrack, palette.sliderThumb)
                 onProgressChange = { onOverlayOpacityChanged() }
@@ -667,7 +668,8 @@ class MainActivity : AppCompatActivity() {
             }
             addView(overlaySizeValue)
             overlaySizeSlider = GlassSlider(this@MainActivity).apply {
-                max = 160
+                min = UiSettingsStore.OVERLAY_SIZE_MIN
+                max = UiSettingsStore.OVERLAY_SIZE_MAX
                 progress = uiSettings.overlaySizePercent
                 setColors(palette.accent, palette.sliderTrack, palette.sliderThumb)
                 onProgressChange = { onOverlaySizeChanged() }
@@ -869,8 +871,10 @@ class MainActivity : AppCompatActivity() {
                 }
             })
         }
-        overlayOpacityValue.text = "Непрозрачность overlay: ${uiSettings.overlayOpacityPercent}%"
-        overlaySizeValue.text = "Размер overlay: ${uiSettings.overlaySizePercent}%"
+        overlayOpacityValue.text =
+            "Непрозрачность overlay: ${uiSettings.overlayOpacityPercent}%"
+        overlaySizeValue.text =
+            "Размер overlay: ${uiSettings.overlaySizePercent}%"
     }
 
     private fun renderValueLabels() {
@@ -1345,7 +1349,8 @@ class MainActivity : AppCompatActivity() {
         if (updated != uiSettings) {
             uiSettings = updated
         }
-        overlayOpacityValue.text = "Непрозрачность overlay: ${uiSettings.overlayOpacityPercent}%"
+        overlayOpacityValue.text =
+            "Непрозрачность overlay: ${uiSettings.overlayOpacityPercent}%"
         syncOverlayBubble(userInitiated = false)
     }
 
@@ -1360,7 +1365,8 @@ class MainActivity : AppCompatActivity() {
         if (updated != uiSettings) {
             uiSettings = updated
         }
-        overlaySizeValue.text = "Размер overlay: ${uiSettings.overlaySizePercent}%"
+        overlaySizeValue.text =
+            "Размер overlay: ${uiSettings.overlaySizePercent}%"
         syncOverlayBubble(userInitiated = false)
     }
 
@@ -1897,10 +1903,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     class GlassSlider(context: Context) : View(context) {
+        var min: Int = 0
+            set(value) {
+                field = value.coerceAtMost(max)
+                if (progress < field) {
+                    progress = field
+                } else {
+                    invalidate()
+                }
+            }
         var max: Int = 100
+            set(value) {
+                field = value.coerceAtLeast(min)
+                if (progress > field) {
+                    progress = field
+                } else {
+                    invalidate()
+                }
+            }
         var progress: Int = 0
             set(value) {
-                field = value.coerceIn(0, max)
+                field = value.coerceIn(min, max)
                 invalidate()
             }
         var onProgressChange: (() -> Unit)? = null
@@ -1930,7 +1953,8 @@ class MainActivity : AppCompatActivity() {
             rect.set(start, cy - radius, end, cy + radius)
             paint.color = track
             canvas.drawRoundRect(rect, radius, radius, paint)
-            val ratio = if (max == 0) 0f else progress / max.toFloat()
+            val range = (max - min).coerceAtLeast(1)
+            val ratio = (progress - min).toFloat() / range.toFloat()
             val thumbX = start + ((end - start) * ratio)
             rect.set(start, cy - radius, thumbX, cy + radius)
             paint.color = accent
@@ -1948,7 +1972,8 @@ class MainActivity : AppCompatActivity() {
                     val start = dpLocal(8).toFloat()
                     val end = width - dpLocal(8).toFloat()
                     val ratio = ((event.x - start) / max(end - start, 1f)).coerceIn(0f, 1f)
-                    val newProgress = (ratio * max).roundToInt().coerceIn(0, max)
+                    val range = (max - min).coerceAtLeast(1)
+                    val newProgress = (min + (ratio * range).roundToInt()).coerceIn(min, max)
                     if (newProgress != progress) {
                         progress = newProgress
                         onProgressChange?.invoke()

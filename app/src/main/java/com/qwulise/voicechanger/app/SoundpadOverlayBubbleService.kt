@@ -194,15 +194,18 @@ class SoundpadOverlayBubbleService : Service() {
             return
         }
 
-        val overlayOpacity = settings.overlayOpacityPercent.coerceIn(35, 100) / 100f
-        val overlayScale = settings.overlaySizePercent.coerceIn(20, 160) / 100f
-        val avatarSize = (dp(56) * overlayScale).roundToInt().coerceAtLeast(dp(40))
-        val bubblePadding = (dp(6) * overlayScale).roundToInt().coerceAtLeast(dp(4))
-        val bubbleRadius = maxOf(dp(16).toFloat(), (dp(24) * overlayScale).roundToInt().toFloat())
-        val avatarRadius = maxOf(dp(14).toFloat(), (dp(18) * overlayScale).roundToInt().toFloat())
-        val panelWidth = (dp(230) * overlayScale).roundToInt().coerceAtLeast(dp(180))
-        val panelHeight = (dp(300) * overlayScale).roundToInt().coerceAtLeast(dp(220))
-        val alpha = (overlayOpacity * 255f).toInt().coerceIn(80, 255)
+        val overlayOpacity = settings.overlayOpacityPercent
+            .coerceIn(UiSettingsStore.OVERLAY_OPACITY_MIN, UiSettingsStore.OVERLAY_OPACITY_MAX) / 100f
+        val overlayScale = settings.overlaySizePercent
+            .coerceIn(UiSettingsStore.OVERLAY_SIZE_MIN, UiSettingsStore.OVERLAY_SIZE_MAX) / 100f
+        val avatarSize = (dp(56) * overlayScale).roundToInt().coerceAtLeast(dp(24))
+        val bubblePadding = (dp(6) * overlayScale).roundToInt().coerceAtLeast(dp(2))
+        val bubbleSide = avatarSize + (bubblePadding * 2)
+        val bubbleRadius = (bubbleSide * 0.28f).coerceAtLeast(dp(8).toFloat())
+        val avatarRadius = (avatarSize * 0.28f).coerceAtLeast(dp(7).toFloat())
+        val panelWidth = (dp(230) * overlayScale).roundToInt().coerceAtLeast(dp(124))
+        val panelHeight = (dp(300) * overlayScale).roundToInt().coerceAtLeast(dp(150))
+        val alpha = (overlayOpacity * 255f).toInt().coerceIn(24, 255)
         (avatar.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
             if (params.width != avatarSize || params.height != avatarSize) {
                 params.width = avatarSize
@@ -220,13 +223,13 @@ class SoundpadOverlayBubbleService : Service() {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = bubbleRadius
             setColor(Color.argb(alpha, 24, 18, 14))
-            setStroke(dp(1), Color.argb((alpha * 0.68f).toInt(), 255, 255, 255))
+            setStroke(dp(1), Color.argb((alpha * 0.52f).toInt().coerceAtLeast(18), 255, 255, 255))
         }
         panel.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = bubbleRadius
-            setColor(Color.argb((alpha * 0.94f).toInt().coerceIn(70, 255), 20, 16, 14))
-            setStroke(dp(1), Color.argb((alpha * 0.52f).toInt().coerceIn(50, 255), 255, 255, 255))
+            setColor(Color.argb((alpha * 0.92f).toInt().coerceAtLeast(18), 20, 16, 14))
+            setStroke(dp(1), Color.argb((alpha * 0.40f).toInt().coerceAtLeast(16), 255, 255, 255))
         }
         (scroll.layoutParams as? LinearLayout.LayoutParams)?.let { params ->
             if (params.width != panelWidth || params.height != panelHeight) {
