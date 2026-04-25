@@ -31,6 +31,11 @@ class AudioHookEntry : IXposedHookLoadPackage {
             }
         }
 
+        if (shouldDeferTelegramStartupHooks(packageName)) {
+            installDeferredTelegramStartupHooks(packageName, lpparam.classLoader)
+            return
+        }
+
         if (shouldAttachNative(packageName)) {
             runCatching {
                 NativeAudioBridge.attachToProcess(packageName)
@@ -79,6 +84,91 @@ class AudioHookEntry : IXposedHookLoadPackage {
                 XposedBridge.log("qwulivoice: skipping Java WebRTC hook in $packageName for startup safety")
             }
         }
+    }
+
+    private fun installDeferredTelegramStartupHooks(packageName: String, classLoader: ClassLoader?) {
+        installTelegramStartupSafetyHooks(packageName, classLoader)
+
+        val applicationLoaderClass = runCatching {
+            XposedHelpers.findClass("org.telegram.messenger.ApplicationLoader", classLoader)
+        }.getOrNull()
+        if (applicationLoaderClass != null) {
+            installTelegramRuntimeAfterApplicationCreate(packageName, applicationLoaderClass, classLoader)
+            return
+        }
+
+        if (classLoader == null) {
+            return
+        }
+        val watcherKey = "$packageName|ApplicationLoader"
+        if (!installedTelegramApplicationWatchers.add(watcherKey)) {
+            return
+        }
+
+        val hookRef = arrayOfNulls<Set<XC_MethodHook.Unhook>>(1)
+        hookRef[0] = XposedBridge.hookAllMethods(ClassLoader::class.java, "loadClass", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val requestedName = param.args.firstOrNull() as? String ?: return
+                if (requestedName != "org.telegram.messenger.ApplicationLoader") {
+                    return
+                }
+                val loadedClass = param.result as? Class<*> ?: return
+                installTelegramRuntimeAfterApplicationCreate(
+                    packageName = packageName,
+                    applicationLoaderClass = loadedClass,
+                    fallbackClassLoader = loadedClass.classLoader ?: classLoader,
+                )
+                hookRef[0]?.forEach { it.unhook() }
+                installedTelegramApplicationWatchers.remove(watcherKey)
+            }
+        })
+    }
+
+    private fun installTelegramRuntimeAfterApplicationCreate(
+        packageName: String,
+        applicationLoaderClass: Class<*>,
+        fallbackClassLoader: ClassLoader?,
+    ) {
+        val installKey = "$packageName|${applicationLoaderClass.name}|onCreate"
+        if (!installedTelegramApplicationHooks.add(installKey)) {
+            return
+        }
+
+        val hookRef = arrayOfNulls<Set<XC_MethodHook.Unhook>>(1)
+        hookRef[0] = XposedBridge.hookAllMethods(applicationLoaderClass, "onCreate", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                installTelegramRuntimeHooks(
+                    packageName = packageName,
+                    classLoader = param.thisObject?.javaClass?.classLoader ?: fallbackClassLoader,
+                )
+                DiagnosticsClient.reportEvent(
+                    packageName = packageName,
+                    source = "Telegram.startup",
+                    detail = "Installed delayed runtime hooks after ApplicationLoader.onCreate.",
+                    rateKey = "$packageName|Telegram.startup|installed",
+                    minIntervalMs = 20_000L,
+                )
+                hookRef[0]?.forEach { it.unhook() }
+            }
+        })
+    }
+
+    private fun installTelegramRuntimeHooks(packageName: String, classLoader: ClassLoader?) {
+        if (!installedTelegramRuntimePackages.add(packageName)) {
+            return
+        }
+        val scopedInstalled = installTelegramScopedHooks(packageName, classLoader)
+        XposedBridge.log("qwulivoice: installing delayed telegram-style AudioRecord.read hook in $packageName")
+        XposedBridge.hookAllMethods(
+            AudioRecord::class.java,
+            "read",
+            createAudioReadHook(
+                packageName = packageName,
+                trackedOnly = true,
+                byteBufferOnly = true,
+                allowUntrackedFallback = !scopedInstalled,
+            ),
+        )
     }
 
     private fun createAudioRecordConstructorHook(packageName: String) = object : XC_MethodHook() {
@@ -515,6 +605,77 @@ class AudioHookEntry : IXposedHookLoadPackage {
         })
     }
 
+    private fun installTelegramStartupSafetyHooks(packageName: String, classLoader: ClassLoader?) {
+        installOneShotShortCircuitWatcher(
+            packageName = packageName,
+            classLoader = classLoader,
+            className = "com.exteragram.messenger.plugins.PluginsController",
+            methodName = "applyBlacklist",
+        )
+    }
+
+    private fun installOneShotShortCircuitWatcher(
+        packageName: String,
+        classLoader: ClassLoader?,
+        className: String,
+        methodName: String,
+    ) {
+        if (classLoader == null) {
+            return
+        }
+        val watcherKey = "$packageName|$className|$methodName|startup"
+        if (!installedStartupSafetyWatchers.add(watcherKey)) {
+            return
+        }
+
+        val hookRef = arrayOfNulls<Set<XC_MethodHook.Unhook>>(1)
+        hookRef[0] = XposedBridge.hookAllMethods(ClassLoader::class.java, "loadClass", object : XC_MethodHook() {
+            override fun afterHookedMethod(param: MethodHookParam) {
+                val requestedName = param.args.firstOrNull() as? String ?: return
+                if (requestedName != className) {
+                    return
+                }
+                val loadedClass = param.result as? Class<*> ?: return
+                installOneShotShortCircuitHookOnClass(
+                    packageName = packageName,
+                    className = className,
+                    clazz = loadedClass,
+                    methodName = methodName,
+                )
+                hookRef[0]?.forEach { it.unhook() }
+                installedStartupSafetyWatchers.remove(watcherKey)
+            }
+        })
+    }
+
+    private fun installOneShotShortCircuitHookOnClass(
+        packageName: String,
+        className: String,
+        clazz: Class<*>,
+        methodName: String,
+    ) {
+        val installKey = "$packageName|$className|$methodName|one-shot"
+        if (!installedStartupSafetyClasses.add(installKey)) {
+            return
+        }
+
+        val hookRef = arrayOfNulls<Set<XC_MethodHook.Unhook>>(1)
+        hookRef[0] = XposedBridge.hookAllMethods(clazz, methodName, object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                DiagnosticsClient.reportEvent(
+                    packageName = packageName,
+                    source = "PluginSafety.startup",
+                    detail = "Short-circuited ${className.substringAfterLast('.')}.${methodName} during startup.",
+                    rateKey = "$packageName|$className|$methodName|startup",
+                    minIntervalMs = 20_000L,
+                )
+                val returnType = (param.method as? Method)?.returnType
+                param.result = defaultReturnValue(returnType)
+                hookRef[0]?.forEach { it.unhook() }
+            }
+        })
+    }
+
     private fun installTelegramPluginSafetyHooksOnClass(
         packageName: String,
         className: String,
@@ -674,13 +835,14 @@ class AudioHookEntry : IXposedHookLoadPackage {
         packageName.startsWith("org.telegram.messenger") ||
             packageName.startsWith("com.exteragram")
 
+    private fun shouldDeferTelegramStartupHooks(packageName: String): Boolean =
+        packageName == "org.telegram.messenger"
+
     private fun usesTelegramScopedHooks(packageName: String): Boolean =
         isTelegramFamilyPackage(packageName) && !usesNativeOnlyHooks(packageName)
 
     private fun usesNativeOnlyHooks(packageName: String): Boolean =
-        packageName == "org.telegram.messenger" ||
-            packageName.startsWith("com.exteragram") ||
-            packageName == "com.viber.voip" ||
+        packageName.startsWith("com.exteragram") ||
             packageName.startsWith("com.discord")
 
     private fun shouldAttachNative(packageName: String): Boolean =
@@ -691,7 +853,6 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     private fun shouldInstallWebRtcJavaHooks(packageName: String): Boolean =
         isTelegramFamilyPackage(packageName) ||
-            packageName == "com.viber.voip" ||
             packageName == "com.google.android.dialer" ||
             packageName.startsWith("com.discord")
 
@@ -699,8 +860,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
         packageName.startsWith("com.exteragram")
 
     private fun shouldInstallDeferredWebRtcHooks(packageName: String): Boolean =
-        packageName == "com.viber.voip" ||
-            packageName == "com.google.android.dialer" ||
+        packageName == "com.google.android.dialer" ||
             packageName.startsWith("com.discord")
 
     private object ConfigClient {
@@ -784,10 +944,15 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     companion object {
         private val installedPackages = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedTelegramRuntimePackages = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedTelegramApplicationHooks = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedTelegramApplicationWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedWebRtcClasses = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedWebRtcWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedPluginSafetyClasses = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedPluginSafetyWatchers = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedStartupSafetyClasses = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedStartupSafetyWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val WEB_RTC_RECORD_CLASSES = listOf(
             "org.webrtc.audio.WebRtcAudioRecord",
             "org.webrtc.voiceengine.WebRtcAudioRecord",
