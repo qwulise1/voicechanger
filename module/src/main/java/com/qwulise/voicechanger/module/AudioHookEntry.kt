@@ -1,6 +1,8 @@
 package com.qwulise.voicechanger.module
 
 import android.media.AudioRecord
+import android.os.Handler
+import android.os.Looper
 import com.qwulise.voicechanger.core.DiagnosticEvent
 import com.qwulise.voicechanger.core.PcmVoiceProcessor
 import com.qwulise.voicechanger.core.VoiceConfig
@@ -18,6 +20,10 @@ class AudioHookEntry : IXposedHookLoadPackage {
         val packageName = lpparam.packageName
         val processName = lpparam.processName ?: packageName
         if (!HookBridge.shouldHookPackage(packageName)) {
+            return
+        }
+        if (isUnsafeTelephonyPackage(packageName)) {
+            XposedBridge.log("qwulivoice: skipped telephony package $packageName")
             return
         }
         if (processName != packageName && shouldRestrictToMainProcess(packageName)) {
@@ -73,7 +79,9 @@ class AudioHookEntry : IXposedHookLoadPackage {
             XposedBridge.hookAllConstructors(AudioRecord::class.java, createAudioRecordConstructorHook(packageName))
             XposedBridge.hookAllMethods(AudioRecord::class.java, "startRecording", createStartRecordingHook(packageName))
             XposedBridge.hookAllMethods(AudioRecord::class.java, "read", createAudioReadHook(packageName))
-            if (shouldInstallWebRtcJavaHooks(packageName)) {
+            if (shouldInstallDelayedWebRtcHooks(packageName)) {
+                installDelayedWebRtcHooks(packageName, lpparam.classLoader)
+            } else if (shouldInstallWebRtcJavaHooks(packageName)) {
                 val installedAny = installWebRtcHooks(packageName, lpparam.classLoader)
                 if (shouldInstallDeferredWebRtcHooks(packageName)) {
                     installDeferredWebRtcHooks(packageName, lpparam.classLoader)
@@ -518,6 +526,47 @@ class AudioHookEntry : IXposedHookLoadPackage {
         return installedAny
     }
 
+    private fun installDelayedWebRtcHooks(packageName: String, classLoader: ClassLoader?) {
+        val schedulerKey = "$packageName|webrtc-delayed"
+        if (!installedDelayedWebRtcSchedulers.add(schedulerKey)) {
+            return
+        }
+        scheduleDelayedWebRtcProbe(packageName, classLoader, attempt = 1, delayMs = 1_500L)
+    }
+
+    private fun scheduleDelayedWebRtcProbe(
+        packageName: String,
+        classLoader: ClassLoader?,
+        attempt: Int,
+        delayMs: Long,
+    ) {
+        runCatching {
+            Handler(Looper.getMainLooper()).postDelayed({
+                val installed = installWebRtcHooks(packageName, classLoader)
+                DiagnosticsClient.reportEvent(
+                    packageName = packageName,
+                    source = "WebRtc.delayed",
+                    detail = "Delayed WebRTC probe attempt=$attempt installed=$installed",
+                    rateKey = "$packageName|WebRtc.delayed|attempt-$attempt",
+                    minIntervalMs = 20_000L,
+                )
+                if (!installed && attempt < MAX_DELAYED_WEBRTC_ATTEMPTS) {
+                    scheduleDelayedWebRtcProbe(
+                        packageName = packageName,
+                        classLoader = classLoader,
+                        attempt = attempt + 1,
+                        delayMs = (delayMs * 2).coerceAtMost(12_000L),
+                    )
+                } else {
+                    installedDelayedWebRtcSchedulers.remove("$packageName|webrtc-delayed")
+                }
+            }, delayMs)
+        }.onFailure {
+            XposedBridge.log("qwulivoice: delayed WebRTC scheduler failed in $packageName: $it")
+            installedDelayedWebRtcSchedulers.remove("$packageName|webrtc-delayed")
+        }
+    }
+
     private fun installWebRtcHooksOnClass(
         packageName: String,
         className: String,
@@ -849,19 +898,34 @@ class AudioHookEntry : IXposedHookLoadPackage {
         usesNativeOnlyHooks(packageName) || !isTelegramFamilyPackage(packageName)
 
     private fun shouldRestrictToMainProcess(packageName: String): Boolean =
-        isTelegramFamilyPackage(packageName)
+        isTelegramFamilyPackage(packageName) ||
+            packageName == "com.viber.voip"
 
     private fun shouldInstallWebRtcJavaHooks(packageName: String): Boolean =
         isTelegramFamilyPackage(packageName) ||
-            packageName == "com.google.android.dialer" ||
             packageName.startsWith("com.discord")
+
+    private fun shouldInstallDelayedWebRtcHooks(packageName: String): Boolean =
+        packageName == "com.viber.voip"
 
     private fun shouldInstallTelegramPluginSafety(packageName: String): Boolean =
         packageName.startsWith("com.exteragram")
 
     private fun shouldInstallDeferredWebRtcHooks(packageName: String): Boolean =
-        packageName == "com.google.android.dialer" ||
-            packageName.startsWith("com.discord")
+        packageName.startsWith("com.discord")
+
+    private fun isUnsafeTelephonyPackage(packageName: String): Boolean =
+        packageName == "com.android.phone" ||
+            packageName == "com.android.server.telecom" ||
+            packageName == "com.android.providers.telephony" ||
+            packageName == "com.android.dialer" ||
+            packageName == "com.google.android.dialer" ||
+            packageName == "com.google.android.apps.phone" ||
+            packageName == "com.samsung.android.dialer" ||
+            packageName == "com.samsung.android.incallui" ||
+            packageName == "com.android.incallui" ||
+            packageName == "com.miui.securitycenter" ||
+            packageName == "com.miui.voip"
 
     private object ConfigClient {
         private const val CACHE_WINDOW_MS = 800L
@@ -949,10 +1013,12 @@ class AudioHookEntry : IXposedHookLoadPackage {
         private val installedTelegramApplicationWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedWebRtcClasses = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedWebRtcWatchers = Collections.synchronizedSet(mutableSetOf<String>())
+        private val installedDelayedWebRtcSchedulers = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedPluginSafetyClasses = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedPluginSafetyWatchers = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedStartupSafetyClasses = Collections.synchronizedSet(mutableSetOf<String>())
         private val installedStartupSafetyWatchers = Collections.synchronizedSet(mutableSetOf<String>())
+        private const val MAX_DELAYED_WEBRTC_ATTEMPTS = 6
         private val WEB_RTC_RECORD_CLASSES = listOf(
             "org.webrtc.audio.WebRtcAudioRecord",
             "org.webrtc.voiceengine.WebRtcAudioRecord",
