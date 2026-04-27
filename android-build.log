@@ -1,0 +1,417 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.7/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :module:preBuild UP-TO-DATE
+> Task :module:preCleanDebugBuild UP-TO-DATE
+> Task :module:mergeCleanDebugNativeDebugMetadata NO-SOURCE
+> Task :module:checkKotlinGradlePluginConfigurationErrors
+> Task :module:generateCleanDebugBuildConfig
+> Task :core:dsp:preBuild UP-TO-DATE
+> Task :core:dsp:preDebugBuild UP-TO-DATE
+> Task :module:generateCleanDebugResValues
+> Task :core:dsp:generateDebugResValues
+> Task :core:dsp:writeDebugAarMetadata
+> Task :core:dsp:generateDebugResources
+> Task :module:checkCleanDebugAarMetadata
+> Task :core:dsp:packageDebugResources
+> Task :module:mapCleanDebugSourceSetPaths
+> Task :module:generateCleanDebugResources
+> Task :module:packageCleanDebugResources
+> Task :module:createCleanDebugCompatibleScreenManifests
+> Task :module:extractDeepLinksCleanDebug
+> Task :core:dsp:extractDeepLinksDebug
+> Task :core:dsp:compileDebugLibraryResources
+> Task :module:parseCleanDebugLocalResources
+> Task :core:dsp:checkKotlinGradlePluginConfigurationErrors
+> Task :core:dsp:parseDebugLocalResources
+> Task :core:dsp:javaPreCompileDebug
+> Task :module:javaPreCompileCleanDebug
+> Task :core:dsp:processDebugManifest
+> Task :module:mergeCleanDebugShaders
+> Task :core:dsp:generateDebugRFile
+
+> Task :module:processCleanDebugMainManifest
+/home/runner/work/voicechanger/voicechanger/module/src/main/AndroidManifest.xml:8:9-42 Warning:
+	android:extractNativeLibs should not be specified in this source AndroidManifest.xml file. See https://d.android.com/guide/topics/manifest/application-element#extractNativeLibs for more information.
+The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml file and update the build file accordingly. See https://d.android.com/studio/build/agp-upgrade-assistant for more information.
+
+> Task :module:processCleanDebugManifest
+> Task :module:mergeCleanDebugResources
+> Task :module:processCleanDebugManifestForPackage
+> Task :module:compileCleanDebugShaders NO-SOURCE
+> Task :module:generateCleanDebugAssets UP-TO-DATE
+> Task :core:dsp:mergeDebugShaders
+> Task :core:dsp:compileDebugShaders NO-SOURCE
+> Task :core:dsp:generateDebugAssets UP-TO-DATE
+> Task :core:dsp:packageDebugAssets
+> Task :module:mergeCleanDebugAssets
+> Task :module:compressCleanDebugAssets
+> Task :module:desugarCleanDebugFileDependencies
+> Task :module:mergeCleanDebugStartupProfile
+> Task :module:checkCleanDebugDuplicateClasses
+> Task :module:configureCMakeDebug[arm64-v8a]
+> Task :module:processCleanDebugResources
+> Task :module:buildCMakeDebug[arm64-v8a]
+> Task :module:configureCMakeDebug[armeabi-v7a]
+> Task :module:mergeExtDexCleanDebug
+> Task :module:buildCMakeDebug[armeabi-v7a]
+> Task :module:configureCMakeDebug[x86]
+> Task :module:buildCMakeDebug[x86]
+> Task :module:configureCMakeDebug[x86_64]
+> Task :module:buildCMakeDebug[x86_64]
+> Task :module:mergeCleanDebugJniLibFolders
+> Task :core:dsp:mergeDebugJniLibFolders
+> Task :core:dsp:mergeDebugNativeLibs NO-SOURCE
+> Task :core:dsp:copyDebugJniLibsProjectOnly
+> Task :core:dsp:compileDebugKotlin
+> Task :module:validateSigningCleanDebug
+> Task :core:dsp:compileDebugJavaWithJavac NO-SOURCE
+> Task :core:dsp:bundleLibCompileToJarDebug
+> Task :core:dsp:bundleLibRuntimeToJarDebug
+> Task :core:dsp:processDebugJavaRes
+> Task :core:dsp:bundleLibRuntimeToDirDebug
+> Task :module:mergeCleanDebugNativeLibs
+> Task :module:stripCleanDebugDebugSymbols
+> Task :module:writeCleanDebugAppMetadata
+> Task :module:writeCleanDebugSigningConfigVersions
+> Task :module:buildKotlinToolingMetadata
+> Task :module:preCleanReleaseBuild UP-TO-DATE
+> Task :module:generateCleanReleaseBuildConfig
+> Task :core:dsp:preReleaseBuild UP-TO-DATE
+> Task :core:dsp:writeReleaseAarMetadata
+> Task :module:checkCleanReleaseAarMetadata
+> Task :module:generateCleanReleaseResValues
+> Task :core:dsp:generateReleaseResValues
+> Task :core:dsp:generateReleaseResources
+> Task :core:dsp:packageReleaseResources
+> Task :module:mapCleanReleaseSourceSetPaths
+> Task :module:generateCleanReleaseResources
+> Task :module:packageCleanReleaseResources
+> Task :module:parseCleanReleaseLocalResources
+> Task :module:createCleanReleaseCompatibleScreenManifests
+> Task :module:extractDeepLinksCleanRelease
+> Task :core:dsp:extractDeepLinksRelease
+> Task :module:mergeLibDexCleanDebug
+> Task :core:dsp:processReleaseManifest
+
+> Task :module:processCleanReleaseMainManifest
+/home/runner/work/voicechanger/voicechanger/module/src/main/AndroidManifest.xml:8:9-42 Warning:
+	android:extractNativeLibs should not be specified in this source AndroidManifest.xml file. See https://d.android.com/guide/topics/manifest/application-element#extractNativeLibs for more information.
+The AGP Upgrade Assistant can remove the attribute from the AndroidManifest.xml file and update the build file accordingly. See https://d.android.com/studio/build/agp-upgrade-assistant for more information.
+
+> Task :module:processCleanReleaseManifest
+> Task :core:dsp:compileReleaseLibraryResources
+> Task :module:processCleanReleaseManifestForPackage
+> Task :core:dsp:parseReleaseLocalResources
+> Task :core:dsp:javaPreCompileRelease
+> Task :core:dsp:generateReleaseRFile
+> Task :module:javaPreCompileCleanRelease
+> Task :module:extractProguardFiles
+> Task :core:dsp:extractProguardFiles
+> Task :core:dsp:prepareLintJarForPublish
+> Task :core:dsp:mergeReleaseJniLibFolders
+> Task :core:dsp:mergeReleaseNativeLibs NO-SOURCE
+> Task :core:dsp:stripReleaseDebugSymbols NO-SOURCE
+> Task :core:dsp:copyReleaseJniLibsProjectAndLocalJars
+> Task :core:dsp:extractDeepLinksForAarRelease
+> Task :core:dsp:mergeReleaseShaders
+> Task :core:dsp:compileReleaseShaders NO-SOURCE
+> Task :core:dsp:generateReleaseAssets UP-TO-DATE
+> Task :core:dsp:packageReleaseAssets
+> Task :core:dsp:prepareReleaseArtProfile
+> Task :core:dsp:writeReleaseLintModelMetadata
+> Task :module:configureCMakeRelWithDebInfo[arm64-v8a]
+> Task :core:dsp:compileReleaseKotlin
+> Task :module:buildCMakeRelWithDebInfo[arm64-v8a]
+> Task :core:dsp:compileReleaseJavaWithJavac NO-SOURCE
+> Task :core:dsp:bundleLibCompileToJarRelease
+> Task :core:dsp:bundleLibRuntimeToJarRelease
+> Task :core:dsp:processReleaseJavaRes
+> Task :core:dsp:createFullJarRelease
+> Task :core:dsp:generateReleaseLintModel
+> Task :core:dsp:extractReleaseAnnotations
+> Task :core:dsp:mergeReleaseGeneratedProguardFiles
+> Task :core:dsp:mergeReleaseConsumerProguardFiles
+> Task :core:dsp:mergeReleaseJavaResource
+> Task :core:dsp:syncReleaseLibJars
+> Task :core:dsp:bundleReleaseLocalLintAar
+> Task :core:dsp:generateReleaseLintVitalModel
+> Task :module:configureCMakeRelWithDebInfo[armeabi-v7a]
+> Task :module:mergeCleanReleaseResources
+> Task :module:buildCMakeRelWithDebInfo[armeabi-v7a]
+> Task :module:configureCMakeRelWithDebInfo[x86]
+> Task :module:processCleanReleaseResources
+> Task :module:compileCleanDebugKotlin
+> Task :module:buildCMakeRelWithDebInfo[x86]
+
+> Task :module:compileCleanDebugKotlin
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1468:76 There is more than one label with such a name in this scope
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1628:39 Parameter 'widthDp' is never used
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1628:53 Parameter 'heightDp' is never used
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/SoundpadImporter.kt:152:51 Unnecessary safe call on a non-null receiver of type MediaFormat
+
+> Task :module:configureCMakeRelWithDebInfo[x86_64]
+> Task :module:compileCleanDebugJavaWithJavac
+> Task :module:dexBuilderCleanDebug
+> Task :module:mergeCleanDebugGlobalSynthetics
+> Task :module:processCleanDebugJavaRes
+> Task :module:mergeProjectDexCleanDebug
+> Task :core:dsp:lintVitalAnalyzeRelease
+> Task :module:mergeCleanDebugJavaResource
+> Task :module:buildCMakeRelWithDebInfo[x86_64]
+> Task :module:mergeCleanReleaseJniLibFolders
+> Task :core:dsp:copyReleaseJniLibsProjectOnly
+> Task :module:mergeCleanReleaseArtProfile
+> Task :module:desugarCleanReleaseFileDependencies
+> Task :core:dsp:bundleLibRuntimeToDirRelease
+> Task :module:mergeCleanReleaseNativeLibs
+> Task :module:stripCleanReleaseDebugSymbols
+> Task :module:extractCleanReleaseNativeSymbolTables
+> Task :module:packageCleanDebug
+> Task :module:createCleanDebugApkListingFileRedirect
+> Task :module:assembleCleanDebug
+> Task :module:mergeCleanReleaseNativeDebugMetadata
+> Task :module:checkCleanReleaseDuplicateClasses
+> Task :module:mergeCleanReleaseStartupProfile
+> Task :module:mergeCleanReleaseShaders
+> Task :module:compileCleanReleaseShaders NO-SOURCE
+> Task :module:generateCleanReleaseAssets UP-TO-DATE
+> Task :module:mergeCleanReleaseAssets
+> Task :module:compressCleanReleaseAssets
+> Task :module:extractCleanReleaseVersionControlInfo
+> Task :module:collectCleanReleaseDependencies
+> Task :module:sdkCleanReleaseDependencyData
+> Task :module:validateSigningCleanRelease
+> Task :module:writeCleanReleaseAppMetadata
+> Task :module:writeCleanReleaseSigningConfigVersions
+> Task :module:optimizeCleanReleaseResources
+> Task :module:mergeExtDexCleanRelease
+
+> Task :module:compileCleanReleaseKotlin
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1468:76 There is more than one label with such a name in this scope
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1628:39 Parameter 'widthDp' is never used
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/MainActivity.kt:1628:53 Parameter 'heightDp' is never used
+w: file:///home/runner/work/voicechanger/voicechanger/app/src/main/java/com/qwulise/voicechanger/app/SoundpadImporter.kt:152:51 Unnecessary safe call on a non-null receiver of type MediaFormat
+
+> Task :module:compileCleanReleaseJavaWithJavac
+> Task :module:generateCleanReleaseLintVitalReportModel
+> Task :module:dexBuilderCleanRelease
+> Task :module:mergeCleanReleaseGlobalSynthetics
+> Task :module:processCleanReleaseJavaRes
+> Task :module:mergeCleanReleaseJavaResource
+> Task :module:mergeDexCleanRelease
+> Task :module:compileCleanReleaseArtProfile
+> Task :module:packageCleanRelease
+> Task :module:createCleanReleaseApkListingFileRedirect
+> Task :module:lintVitalAnalyzeCleanRelease
+> Task :module:lintVitalReportCleanRelease
+> Task :module:lintVitalCleanRelease
+> Task :module:assembleCleanRelease
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/__run_3-1777309420353.json
+
+BUILD SUCCESSFUL in 1m 45s
+161 actionable tasks: 161 executed
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:146 (include)
+  CMakeLists.txt:2 (project)
+
+
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /usr/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:146 (include)
+  CMakeLists.txt:2 (project)
+
+
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-arm64-v8a/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+  CMakeLists.txt:2 (project)
+
+
+-- The CXX compiler identification is Clang 18.0.4
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+  /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-CXX.cmake:1 (include)
+  /usr/local/share/cmake-3.31/Modules/CMakeCXXInformation.cmake:48 (include)
+  CMakeLists.txt:2 (project)
+
+
+-- Detecting CXX compiler ABI info
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-arm64-v8a/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-arm64-v8a/CMakeFiles/CMakeScratch/TryCompile-8fetNB/CMakeLists.txt:2 (project)
+
+
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-arm64-v8a/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-arm64-v8a/CMakeFiles/CMakeScratch/TryCompile-8fetNB/CMakeLists.txt:2 (project)
+
+
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+  /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-CXX.cmake:1 (include)
+  /usr/local/share/cmake-3.31/Modules/CMakeCXXInformation.cmake:48 (include)
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-arm64-v8a/CMakeFiles/CMakeScratch/TryCompile-8fetNB/CMakeLists.txt:2 (project)
+
+
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (4.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-arm64-v8a
+[ 50%] Building CXX object CMakeFiles/qwv_preprocess.dir/qwv_preprocess.cpp.o
+[100%] Linking CXX shared library libqwv_preprocess.so
+[100%] Built target qwv_preprocess
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:146 (include)
+  CMakeLists.txt:2 (project)
+
+
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /usr/local/share/cmake-3.31/Modules/CMakeDetermineSystem.cmake:146 (include)
+  CMakeLists.txt:2 (project)
+
+
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-armeabi-v7a/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+  CMakeLists.txt:2 (project)
+
+
+-- The CXX compiler identification is Clang 18.0.4
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+  /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-CXX.cmake:1 (include)
+  /usr/local/share/cmake-3.31/Modules/CMakeCXXInformation.cmake:48 (include)
+  CMakeLists.txt:2 (project)
+
+
+-- Detecting CXX compiler ABI info
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-armeabi-v7a/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-armeabi-v7a/CMakeFiles/CMakeScratch/TryCompile-1z5D1z/CMakeLists.txt:2 (project)
+
+
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android-legacy.toolchain.cmake:35 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/android.toolchain.cmake:55 (include)
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-armeabi-v7a/CMakeFiles/3.31.6/CMakeSystem.cmake:6 (include)
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-armeabi-v7a/CMakeFiles/CMakeScratch/TryCompile-1z5D1z/CMakeLists.txt:2 (project)
+
+
+CMake Deprecation Warning at /usr/local/lib/android/sdk/ndk/27.3.13750724/build/cmake/flags.cmake:18 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+Call Stack (most recent call first):
+  /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang.cmake:23 (include)
+  /usr/local/share/cmake-3.31/Modules/Platform/Android-Clang-CXX.cmake:1 (include)
+  /usr/local/share/cmake-3.31/Modules/CMakeCXXInformation.cmake:48 (include)
+  /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-armeabi-v7a/CMakeFiles/CMakeScratch/TryCompile-1z5D1z/CMakeLists.txt:2 (project)
+
+
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/local/lib/android/sdk/ndk/27.3.13750724/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.4s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/runner/work/voicechanger/voicechanger/build/root-audio/cmake-armeabi-v7a
+[ 50%] Building CXX object CMakeFiles/qwv_preprocess.dir/qwv_preprocess.cpp.o
+[100%] Linking CXX shared library libqwv_preprocess.so
+[100%] Built target qwv_preprocess
+Created root audio module: /home/runner/work/voicechanger/voicechanger/build/ci/qwulivoice-root-audio-module.zip
