@@ -26,6 +26,10 @@ class AudioHookEntry : IXposedHookLoadPackage {
             XposedBridge.log("qwulivoice: skipped telephony package $packageName")
             return
         }
+        if (isHookHostileTelegramPackage(packageName)) {
+            XposedBridge.log("qwulivoice: skipped app-level hooks for $packageName; root audio layer handles this package")
+            return
+        }
         if (processName != packageName && shouldRestrictToMainProcess(packageName)) {
             return
         }
@@ -898,8 +902,7 @@ class AudioHookEntry : IXposedHookLoadPackage {
         usesNativeOnlyHooks(packageName) || !isTelegramFamilyPackage(packageName)
 
     private fun shouldRestrictToMainProcess(packageName: String): Boolean =
-        isTelegramFamilyPackage(packageName) ||
-            packageName == "com.viber.voip"
+        isTelegramFamilyPackage(packageName)
 
     private fun shouldInstallWebRtcJavaHooks(packageName: String): Boolean =
         isTelegramFamilyPackage(packageName) ||
@@ -913,6 +916,9 @@ class AudioHookEntry : IXposedHookLoadPackage {
 
     private fun shouldInstallDeferredWebRtcHooks(packageName: String): Boolean =
         packageName.startsWith("com.discord")
+
+    private fun isHookHostileTelegramPackage(packageName: String): Boolean =
+        packageName == "org.telegram.messenger"
 
     private fun isUnsafeTelephonyPackage(packageName: String): Boolean =
         packageName == "com.android.phone" ||

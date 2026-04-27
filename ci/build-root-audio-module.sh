@@ -26,6 +26,9 @@ mkdir -p "${MODULE_DIR}" "${ROOT_DIR}/build/ci"
 cp -R "${MODULE_SRC}/." "${MODULE_DIR}/"
 
 chmod 0755 "${MODULE_DIR}/customize.sh" "${MODULE_DIR}/service.sh" "${MODULE_DIR}/post-fs-data.sh"
+if [[ -f "${MODULE_DIR}/.aml.sh" ]]; then
+  chmod 0755 "${MODULE_DIR}/.aml.sh"
+fi
 
 build_abi() {
   local abi="$1"
@@ -52,8 +55,9 @@ cat > "${MODULE_DIR}/README.txt" <<EOF
 qwulivoice root audio layer
 
 Install this ZIP as a KernelSU Next / Magisk module, reboot, keep the APK installed,
-and change voice settings from the qwulivoice app. The service syncs app settings to
-/vendor/etc/qwulivoice.properties for audioserver-side processing.
+and change voice/soundpad settings from the qwulivoice app. The service syncs app
+settings to /data/adb/qwulivoice and /vendor/etc/qwulivoice.properties for
+audioserver-side processing. The module also ships an AML-compatible .aml.sh patch.
 EOF
 
 rm -f "${ZIP_PATH}"

@@ -36,6 +36,16 @@ constexpr int kMaxChannels = 8;
 constexpr int kRingSize = 32768;
 constexpr int kDelaySize = 65536;
 constexpr int kXfadeSamples = 128;
+constexpr int kSoundpadCacheMs = 160;
+constexpr const char *kAdbConfigPath = "/data/adb/qwulivoice/config.properties";
+constexpr const char *kAppConfigPath = "/data/local/tmp/qwulivoice-com.qwulivoice.beta.properties";
+constexpr const char *kVendorConfigPath = "/vendor/etc/qwulivoice.properties";
+constexpr const char *kAdbSoundpadLibraryPath = "/data/adb/qwulivoice/soundpad.properties";
+constexpr const char *kAdbSoundpadPlaybackPath = "/data/adb/qwulivoice/soundpad.state.properties";
+constexpr const char *kAppSoundpadLibraryPath = "/data/local/tmp/qwulivoice-com.qwulivoice.beta.soundpad.properties";
+constexpr const char *kAppSoundpadPlaybackPath = "/data/local/tmp/qwulivoice-com.qwulivoice.beta.soundpad.state.properties";
+constexpr const char *kAppSoundpadDir = "/data/local/tmp/qwulivoice-com.qwulivoice.beta-soundpad/";
+constexpr const char *kAdbSoundpadDir = "/data/adb/qwulivoice/soundpad/";
 
 enum EffectCommand : uint32_t {
     EFFECT_CMD_INIT = 0,
@@ -133,11 +143,31 @@ struct VoiceConfig {
     int64_t loadedAtMs = 0;
 };
 
+struct SoundpadSnapshot {
+    bool active = false;
+    std::string pcmPath;
+    int sampleRate = 48000;
+    int mixPercent = 70;
+    int gainPercent = 100;
+    int64_t sessionId = 0;
+    bool looping = false;
+    int64_t loadedAtMs = 0;
+};
+
 struct DspState {
     int sampleRate = kDefaultSampleRate;
     std::string mode;
     std::vector<float> ring = std::vector<float>(kRingSize, 0.0f);
     std::vector<float> delay = std::vector<float>(kDelaySize, 0.0f);
+    std::vector<int16_t> soundpadSamples;
+    std::string soundpadPcmPath;
+    int soundpadSourceSampleRate = kDefaultSampleRate;
+    double soundpadPosition = 0.0;
+    int64_t soundpadSessionId = 0;
+    int64_t soundpadCompletedSessionId = 0;
+    bool soundpadLooping = false;
+    bool soundpadActive = false;
+    float soundpadMix = 0.0f;
     int64_t written = 0;
     float readPos = 0.0f;
     bool readInitialized = false;
@@ -175,7 +205,9 @@ const effect_uuid_t kEffectUuid = {
 };
 
 VoiceConfig gConfig;
+SoundpadSnapshot gSoundpad;
 std::mutex gConfigLock;
+std::mutex gSoundpadLock;
 
 int64_t nowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -224,6 +256,49 @@ int readInt(std::string_view value, int fallback) {
     return static_cast<int>(parsed);
 }
 
+int64_t readInt64(std::string_view value, int64_t fallback) {
+    const std::string owned(value);
+    char *end = nullptr;
+    const long long parsed = std::strtoll(owned.c_str(), &end, 10);
+    if (end == nullptr || *end != '\0') {
+        return fallback;
+    }
+    return static_cast<int64_t>(parsed);
+}
+
+bool loadPropertiesMap(const char *path, std::unordered_map<std::string, std::string> &target) {
+    std::ifstream input(path);
+    if (!input.is_open()) {
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(input, line)) {
+        line = trim(line);
+        if (line.empty() || line[0] == '#' || line[0] == '!') {
+            continue;
+        }
+        const auto sep = line.find('=');
+        if (sep == std::string::npos) {
+            continue;
+        }
+        const std::string key = trim(line.substr(0, sep));
+        const std::string value = trim(line.substr(sep + 1));
+        if (!key.empty()) {
+            target[key] = value;
+        }
+    }
+    return true;
+}
+
+std::string prop(
+    const std::unordered_map<std::string, std::string> &properties,
+    const std::string &key,
+    std::string fallback = "") {
+    const auto found = properties.find(key);
+    return found == properties.end() ? fallback : found->second;
+}
+
 bool loadPropertiesFrom(const char *path, VoiceConfig &target) {
     std::ifstream input(path);
     if (!input.is_open()) {
@@ -266,9 +341,9 @@ VoiceConfig loadConfig() {
 
     VoiceConfig next;
     const bool loaded =
-        loadPropertiesFrom("/vendor/etc/qwulivoice.properties", next) ||
-        loadPropertiesFrom("/data/adb/qwulivoice/config.properties", next) ||
-        loadPropertiesFrom("/data/local/tmp/qwulivoice-com.qwulivoice.beta.properties", next);
+        loadPropertiesFrom(kAdbConfigPath, next) ||
+        loadPropertiesFrom(kAppConfigPath, next) ||
+        loadPropertiesFrom(kVendorConfigPath, next);
     next.loadedAtMs = now;
     if (!loaded) {
         next.enabled = false;
@@ -277,6 +352,84 @@ VoiceConfig loadConfig() {
     std::lock_guard<std::mutex> lock(gConfigLock);
     gConfig = next;
     return gConfig;
+}
+
+int64_t javaStringHash(const std::string &value) {
+    int32_t hash = 0;
+    for (const unsigned char ch : value) {
+        hash = (hash * 31) + static_cast<int32_t>(ch);
+    }
+    return static_cast<int64_t>(hash);
+}
+
+bool startsWith(std::string_view value, std::string_view prefix) {
+    return value.size() >= prefix.size() && value.substr(0, prefix.size()) == prefix;
+}
+
+std::string adbSoundpadPathFor(const std::string &path) {
+    if (!startsWith(path, kAppSoundpadDir)) {
+        return "";
+    }
+    return std::string(kAdbSoundpadDir) + path.substr(std::strlen(kAppSoundpadDir));
+}
+
+SoundpadSnapshot loadSoundpadSnapshot() {
+    const int64_t now = nowMs();
+    {
+        std::lock_guard<std::mutex> lock(gSoundpadLock);
+        if (now - gSoundpad.loadedAtMs < kSoundpadCacheMs) {
+            return gSoundpad;
+        }
+    }
+
+    std::unordered_map<std::string, std::string> playback;
+    std::unordered_map<std::string, std::string> library;
+    const bool playbackLoaded =
+        loadPropertiesMap(kAdbSoundpadPlaybackPath, playback) ||
+        loadPropertiesMap(kAppSoundpadPlaybackPath, playback);
+    const bool libraryLoaded =
+        loadPropertiesMap(kAdbSoundpadLibraryPath, library) ||
+        loadPropertiesMap(kAppSoundpadLibraryPath, library);
+
+    SoundpadSnapshot next;
+    next.loadedAtMs = now;
+    if (!playbackLoaded || !libraryLoaded) {
+        std::lock_guard<std::mutex> lock(gSoundpadLock);
+        gSoundpad = next;
+        return gSoundpad;
+    }
+
+    const std::string activeSlot = prop(playback, "active_slot_id");
+    const bool playing = readBool(prop(playback, "playing"), false);
+    next.looping = readBool(prop(playback, "looping"), false);
+    next.mixPercent = std::clamp(readInt(prop(playback, "mix_percent"), 70), 0, 100);
+    next.sessionId = readInt64(prop(playback, "session_id"), 0);
+    if (!playing || activeSlot.empty() || next.mixPercent <= 0) {
+        std::lock_guard<std::mutex> lock(gSoundpadLock);
+        gSoundpad = next;
+        return gSoundpad;
+    }
+
+    const int slotCount = std::clamp(readInt(prop(library, "slot_count"), 0), 0, 512);
+    for (int index = 0; index < slotCount; ++index) {
+        const std::string prefix = "slot." + std::to_string(index) + ".";
+        if (prop(library, prefix + "id") != activeSlot) {
+            continue;
+        }
+        next.pcmPath = prop(library, prefix + "pcm_path");
+        next.sampleRate = std::max(readInt(prop(library, prefix + "sample_rate"), kDefaultSampleRate), 8000);
+        const int frameCount = readInt(prop(library, prefix + "frame_count"), 0);
+        next.gainPercent = std::clamp(readInt(prop(library, prefix + "gain_percent"), 100), 0, 160);
+        if (next.sessionId <= 0) {
+            next.sessionId = javaStringHash(activeSlot);
+        }
+        next.active = !next.pcmPath.empty() && frameCount > 0;
+        break;
+    }
+
+    std::lock_guard<std::mutex> lock(gSoundpadLock);
+    gSoundpad = next;
+    return gSoundpad;
 }
 
 float softClip(float value) {
@@ -427,6 +580,109 @@ float applyMicBoost(float input, int boost) {
     return std::clamp((clipped * (1.0f - saturationMix)) + (saturated * saturationMix), -1.0f, 1.0f);
 }
 
+float computeSoundpadMix(int mixPercent, int gainPercent) {
+    const float mix = std::pow(std::clamp(static_cast<float>(mixPercent), 0.0f, 100.0f) / 100.0f, 1.18f);
+    const float slotGain = std::pow(std::clamp(static_cast<float>(gainPercent), 0.0f, 160.0f) / 100.0f, 0.92f);
+    return std::clamp(mix * slotGain * 0.92f, 0.0f, 1.35f);
+}
+
+std::vector<int16_t> loadPcmFile(const std::string &path) {
+    if (path.empty()) {
+        return {};
+    }
+    FILE *file = std::fopen(path.c_str(), "rb");
+    if (file == nullptr) {
+        const std::string adbPath = adbSoundpadPathFor(path);
+        if (!adbPath.empty()) {
+            file = std::fopen(adbPath.c_str(), "rb");
+        }
+    }
+    if (file == nullptr) {
+        return {};
+    }
+    std::fseek(file, 0, SEEK_END);
+    const long size = std::ftell(file);
+    std::rewind(file);
+    if (size < 2) {
+        std::fclose(file);
+        return {};
+    }
+    std::vector<int16_t> samples(static_cast<size_t>(size / 2));
+    const size_t readCount = std::fread(samples.data(), sizeof(int16_t), samples.size(), file);
+    std::fclose(file);
+    samples.resize(readCount);
+    return samples;
+}
+
+bool prepareSoundpadRuntime(DspState &state, const SoundpadSnapshot &soundpad) {
+    if (!soundpad.active || soundpad.pcmPath.empty() || soundpad.sampleRate <= 0) {
+        state.soundpadActive = false;
+        state.soundpadMix = 0.0f;
+        return false;
+    }
+
+    const bool needsReload =
+        soundpad.sessionId != state.soundpadSessionId ||
+        soundpad.pcmPath != state.soundpadPcmPath;
+
+    if (state.soundpadCompletedSessionId == soundpad.sessionId &&
+        state.soundpadPcmPath == soundpad.pcmPath &&
+        !soundpad.looping) {
+        state.soundpadActive = false;
+        state.soundpadMix = 0.0f;
+        return false;
+    }
+
+    if (needsReload) {
+        state.soundpadSamples = loadPcmFile(soundpad.pcmPath);
+        state.soundpadPcmPath = soundpad.pcmPath;
+        state.soundpadSourceSampleRate = std::max(soundpad.sampleRate, 8000);
+        state.soundpadPosition = 0.0;
+        state.soundpadSessionId = soundpad.sessionId;
+        state.soundpadCompletedSessionId = 0;
+        state.soundpadActive = !state.soundpadSamples.empty();
+    }
+
+    state.soundpadLooping = soundpad.looping;
+    state.soundpadMix = computeSoundpadMix(soundpad.mixPercent, soundpad.gainPercent);
+    if (state.soundpadSamples.empty()) {
+        state.soundpadActive = false;
+    }
+    return state.soundpadActive && state.soundpadMix > 0.0f;
+}
+
+float nextSoundpadSample(int outputSampleRate, DspState &state) {
+    if (!state.soundpadActive || state.soundpadSamples.empty()) {
+        return 0.0f;
+    }
+
+    const int frameCount = static_cast<int>(state.soundpadSamples.size());
+    if (frameCount <= 0) {
+        state.soundpadActive = false;
+        return 0.0f;
+    }
+
+    if (!state.soundpadLooping && state.soundpadPosition >= frameCount) {
+        state.soundpadActive = false;
+        state.soundpadCompletedSessionId = state.soundpadSessionId;
+        return 0.0f;
+    }
+    if (state.soundpadLooping && state.soundpadPosition >= frameCount) {
+        state.soundpadPosition = std::fmod(state.soundpadPosition, static_cast<double>(frameCount));
+    }
+
+    const int base = std::clamp(static_cast<int>(state.soundpadPosition), 0, frameCount - 1);
+    const int nextIndex = (base + 1 < frameCount) ? (base + 1) : (state.soundpadLooping ? 0 : base);
+    const float fraction = std::clamp(static_cast<float>(state.soundpadPosition - base), 0.0f, 1.0f);
+    const float first = static_cast<float>(state.soundpadSamples[base]) / 32768.0f;
+    const float second = static_cast<float>(state.soundpadSamples[nextIndex]) / 32768.0f;
+    const float sample = first + ((second - first) * fraction);
+    const double step = static_cast<double>(state.soundpadSourceSampleRate) /
+        static_cast<double>(std::max(outputSampleRate, 8000));
+    state.soundpadPosition += std::max(step, 0.1);
+    return std::clamp(sample * state.soundpadMix, -1.0f, 1.0f);
+}
+
 float processMode(float input, const VoiceConfig &config, DspState &state) {
     const std::string &mode = config.mode;
     const float strength = std::clamp(config.strength, 0, 100) / 100.0f;
@@ -534,24 +790,28 @@ int32_t effectProcess(effect_handle_t self, audio_buffer_t *inBuffer, audio_buff
     }
 
     const VoiceConfig config = loadConfig();
+    const SoundpadSnapshot soundpad = loadSoundpadSnapshot();
     const uint8_t format = resolveFormat(*ctx);
     const int sampleRate = resolveSampleRate(*ctx);
     const int channels = resolveChannels(*ctx);
     const size_t frames = std::min(inBuffer->frameCount, outBuffer->frameCount);
-    if (!ctx->enabled || !config.enabled || frames == 0) {
+    if (!ctx->enabled || (!config.enabled && !soundpad.active) || frames == 0) {
         passthrough(inBuffer, outBuffer, format, channels);
         return 0;
     }
 
     std::lock_guard<std::mutex> lock(ctx->lock);
-    prepareState(ctx->state, sampleRate, config.mode);
+    prepareState(ctx->state, sampleRate, config.enabled ? config.mode : "original");
+    const bool applySoundpad = prepareSoundpadRuntime(ctx->state, soundpad);
 
     if (format == kAudioFormatPcmFloat) {
         for (size_t frame = 0; frame < frames; ++frame) {
+            const float pad = applySoundpad ? nextSoundpadSample(sampleRate, ctx->state) : 0.0f;
             for (int channel = 0; channel < channels; ++channel) {
                 const size_t index = (frame * static_cast<size_t>(channels)) + static_cast<size_t>(channel);
                 const float input = std::clamp(inBuffer->f32[index], -1.0f, 1.0f);
-                outBuffer->f32[index] = processMode(input, config, ctx->state);
+                const float voice = config.enabled ? processMode(input, config, ctx->state) : input;
+                outBuffer->f32[index] = applySoundpad ? softClip(voice + pad) : voice;
             }
         }
         return 0;
@@ -563,10 +823,12 @@ int32_t effectProcess(effect_handle_t self, audio_buffer_t *inBuffer, audio_buff
     }
 
     for (size_t frame = 0; frame < frames; ++frame) {
+        const float pad = applySoundpad ? nextSoundpadSample(sampleRate, ctx->state) : 0.0f;
         for (int channel = 0; channel < channels; ++channel) {
             const size_t index = (frame * static_cast<size_t>(channels)) + static_cast<size_t>(channel);
             const float input = static_cast<float>(inBuffer->s16[index]) / 32768.0f;
-            const float output = processMode(input, config, ctx->state);
+            const float voice = config.enabled ? processMode(input, config, ctx->state) : input;
+            const float output = applySoundpad ? softClip(voice + pad) : voice;
             const int packed = static_cast<int>(std::lrint(output * 32767.0f));
             outBuffer->s16[index] = static_cast<int16_t>(std::clamp(packed, -32768, 32767));
         }

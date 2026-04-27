@@ -18,10 +18,11 @@ object RootConfigPublisher {
         val script = """
             umask 000
             mkdir -p /data/local/tmp
-            cat > ${configPath}
+            mkdir -p /data/adb/qwulivoice
+            tee ${configPath} /data/adb/qwulivoice/config.properties >/dev/null
             touch ${logPath}
             rm -f ${VoiceConfigFileBridge.CONFIG_PATH}
-            chmod 666 ${configPath} ${logPath}
+            chmod 666 ${configPath} ${logPath} /data/adb/qwulivoice/config.properties
         """.trimIndent()
         runSu(script, rawConfig)
     }
@@ -50,10 +51,12 @@ object RootConfigPublisher {
         val script = """
             umask 000
             mkdir -p /data/local/tmp
+            mkdir -p /data/adb/qwulivoice
             mkdir -p ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
-            cat > ${libraryPath}
+            tee ${libraryPath} /data/adb/qwulivoice/soundpad.properties >/dev/null
             touch ${playbackPath}
-            chmod 666 ${libraryPath} ${playbackPath}
+            touch /data/adb/qwulivoice/soundpad.state.properties
+            chmod 666 ${libraryPath} ${playbackPath} /data/adb/qwulivoice/soundpad.properties /data/adb/qwulivoice/soundpad.state.properties
             chmod 777 ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
         """.trimIndent()
         runSu(script, rawLibrary)
@@ -66,10 +69,12 @@ object RootConfigPublisher {
         val script = """
             umask 000
             mkdir -p /data/local/tmp
+            mkdir -p /data/adb/qwulivoice
             mkdir -p ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
             touch ${libraryPath}
-            cat > ${playbackPath}
-            chmod 666 ${libraryPath} ${playbackPath}
+            touch /data/adb/qwulivoice/soundpad.properties
+            tee ${playbackPath} /data/adb/qwulivoice/soundpad.state.properties >/dev/null
+            chmod 666 ${libraryPath} ${playbackPath} /data/adb/qwulivoice/soundpad.properties /data/adb/qwulivoice/soundpad.state.properties
             chmod 777 ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
         """.trimIndent()
         runSu(script, rawPlayback)
@@ -78,12 +83,17 @@ object RootConfigPublisher {
     fun publishSoundpadClip(packageName: String, slotId: String, sourceFile: File) {
         require(sourceFile.isFile) { "PCM source file not found: ${sourceFile.absolutePath}" }
         val targetPath = SoundpadFileBridge.pcmPathFor(packageName, slotId)
+        val targetFileName = File(targetPath).name
         val script = """
             umask 000
             mkdir -p ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
+            mkdir -p /data/adb/qwulivoice/soundpad
             cp '${sourceFile.absolutePath}' '${targetPath}'
             chmod 666 '${targetPath}'
+            cp '${targetPath}' /data/adb/qwulivoice/soundpad/
+            chmod 666 '/data/adb/qwulivoice/soundpad/${targetFileName}'
             chmod 777 ${SoundpadFileBridge.pcmDirectoryFor(packageName)}
+            chmod 777 /data/adb/qwulivoice/soundpad
         """.trimIndent()
         runSu(script, "")
     }

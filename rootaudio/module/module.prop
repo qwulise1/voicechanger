@@ -1,6 +1,6 @@
 id=qwulivoice_root_audio
 name=qwulivoice root audio layer
-version=1.20.0-beta
-versionCode=23
+version=1.21.0-beta
+versionCode=24
 author=@qwulise
-description=Systemless microphone pre-processing layer for qwulivoice. Installs a native input AudioEffect below app-level LSPosed hooks.
+description=Systemless microphone pre-processing layer for qwulivoice. Installs a native input AudioEffect, AML patch script, live soundpad sync, and SELinux rules below app-level LSPosed hooks.

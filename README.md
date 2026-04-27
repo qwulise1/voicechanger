@@ -8,7 +8,8 @@ The current build ships as one installable clean APK plus an optional root audio
 - clean settings screen;
 - provider-backed config store;
 - root bridge fallback for target processes;
-- Java `AudioRecord.read(...)` PCM processing.
+- Java/native `AudioRecord` PCM processing;
+- root audio preprocessing with soundpad sync when the optional module is installed.
 
 ## Builds
 
@@ -17,7 +18,7 @@ The current build ships as one installable clean APK plus an optional root audio
 
 Install the APK, enable it in LSPosed, choose target apps in LSPosed scope, then open qwulivoice and change settings. Settings save automatically.
 
-For the root audio layer, install `qwulivoice-root-audio-module.zip` in KernelSU Next or Magisk and reboot. The APK remains the settings UI.
+For the root audio layer, install `qwulivoice-root-audio-module.zip` in KernelSU Next or Magisk and reboot. The APK remains the settings UI; the module patches Android input preprocessing below app-level LSPosed hooks.
 
 ## Audio
 

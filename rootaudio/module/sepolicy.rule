@@ -1,0 +1,7 @@
+# Allow audioserver / common audio HAL domains to load the systemless effect and read live config.
+allow { audioserver hal_audio_default mtk_hal_audio } { system_file system_lib_file vendor_file vendor_configs_file } file { read open getattr execute map }
+allow { audioserver hal_audio_default mtk_hal_audio } { system_file vendor_file vendor_configs_file } dir { read open search getattr }
+allow { audioserver hal_audio_default mtk_hal_audio } { shell_data_file adb_data_file } dir { read open search getattr }
+allow { audioserver hal_audio_default mtk_hal_audio } { shell_data_file adb_data_file } file { read open getattr map }
+allow { audioserver hal_audio_default mtk_hal_audio } logd_socket sock_file write
+allow { audioserver hal_audio_default mtk_hal_audio } logd unix_stream_socket connectto
