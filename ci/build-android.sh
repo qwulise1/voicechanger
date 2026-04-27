@@ -22,6 +22,13 @@ status=${PIPESTATUS[0]}
 set -e
 
 if [[ "${status}" -eq 0 ]]; then
+  set +e
+  ./ci/build-root-audio-module.sh 2>&1 | tee -a "${LOG_FILE}"
+  status=${PIPESTATUS[0]}
+  set -e
+fi
+
+if [[ "${status}" -eq 0 ]]; then
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     {
       echo "## Android CI"

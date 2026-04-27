@@ -79,6 +79,13 @@ jobs:
           name: qwulivoice-release-bundle
           path: build/ci/qwulivoice-*-release-bundle.zip
 
+      - name: Upload root audio module
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwulivoice-root-audio-module
+          path: build/ci/qwulivoice-root-audio-module.zip
+
       - name: Publish latest artifacts branch
         if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
@@ -87,6 +94,7 @@ jobs:
           out_dir="$(mktemp -d)"
           cp module/build/outputs/apk/clean/release/*.apk "$out_dir/qwulivoice-beta-release.apk"
           cp module/build/outputs/apk/clean/debug/*.apk "$out_dir/qwulivoice-beta-debug.apk"
+          cp build/ci/qwulivoice-root-audio-module.zip "$out_dir/qwulivoice-root-audio-module.zip"
           cp build/ci/qwulivoice-*-release-bundle.zip "$out_dir/"
           cp build/ci/android-build.log "$out_dir/android-build.log"
           cat > "$out_dir/README.txt" <<EOF
@@ -97,6 +105,7 @@ jobs:
           Install one release APK from this folder.
           Release APKs are CI debug-key signed test builds:
           - qwulivoice-beta-release.apk: package com.qwulivoice.beta
+          - qwulivoice-root-audio-module.zip: KernelSU Next / Magisk root audio module
           EOF
 
           git config user.name "github-actions[bot]"

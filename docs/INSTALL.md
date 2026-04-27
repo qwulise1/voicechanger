@@ -7,3 +7,7 @@
 5. Open qwulivoice, pick a mode, set effect and mic boost. Changes save automatically.
 
 This build is clean-only: no hidden OnePlus/OPlus vendor layer is shipped.
+
+For lower-level microphone processing, install `qwulivoice-root-audio-module.zip`
+as a KernelSU Next or Magisk module and reboot. Keep the APK installed because it
+is still the settings UI for the root audio layer.
